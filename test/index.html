@@ -61,13 +61,54 @@
   <header>
     <p class="eyebrow">iPhone Safari 動作検証</p>
     <h1>音声テスト版</h1>
+    <p>テスト版 v2(2026-11-06)</p>
     <p>読み上げて、聞き取って、結果を残す。約2〜3分のテストです。</p>
     <p class="note">HTTPSで開き、マイクの許可を求められたら許可してください。初回の許可操作は必要です。音声・認識結果はこのページから送信・保存しません。ただし、Safariの音声認識サービス自体が通信する場合があります。</p>
   </header>
 
+  <section aria-labelledby="settings-heading">
+    <h2 id="settings-heading">声と速さ(飛ばしてもOK)</h2>
+    <label for="voice">日本語の声</label>
+    <select id="voice" data-setting><option value="">日本語音声を取得中（標準の声を使用）</option></select>
+    <label for="rate">速さ：<output id="rate-value" for="rate">0.90</output> 倍</label>
+    <input id="rate" data-setting type="range" min="0.7" max="1.5" step="0.05" value="0.9">
+    <label for="answer-time">答える時間（最初の声を待つ時間）</label>
+    <select id="answer-time" data-setting><option value="5">5秒</option><option value="10" selected>10秒</option><option value="15">15秒</option></select>
+    <label class="check" for="cue"><input id="cue" data-setting type="checkbox" checked>合図音を鳴らす</label>
+    <button id="sample" type="button" data-run>試し読み</button>
+    <p class="note">保存するのは声の選択、速さ、答える時間だけです。合図音、認識結果、ログ、手動チェックは再読み込みで消えます。</p>
+  </section>
+
+  <section id="recognition-help" aria-labelledby="help-heading" hidden>
+    <h2 id="help-heading">聞き取りが使えないとき</h2>
+    <ul>
+      <li>設定 → 一般 → キーボード →「音声入力」をオン</li>
+      <li>設定 → アプリ → Safari → マイク を「確認」または「許可」</li>
+      <li>スクリーンタイムの「コンテンツとプライバシーの制限」でSiriと音声入力が禁止されていないか</li>
+      <li>設定を直したらSafariでこのページを再読み込みし、下の「聞き取りの診断」を上から順に試す</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="diagnosis-heading">
+    <h2 id="diagnosis-heading">聞き取りの診断</h2>
+    <p>上から順に試してください。D1は読み上げなしで開始します。</p>
+    <button id="diagnosis-1" type="button" data-run>D1 タップ直後に聞き取り</button>
+    <button id="diagnosis-2" type="button" data-run>D2 読み上げのあとに聞き取り</button>
+    <button id="diagnosis-3" type="button" data-run>D3 つなぎっぱなし方式</button>
+    <p id="diagnosis-status" role="status" aria-live="polite">未実施</p>
+    <div id="diagnosis-volume" hidden>
+      <p>D3の読み上げ音量は小さくなりませんでしたか。</p>
+      <button id="diagnosis-same" type="button">同じ</button>
+      <button id="diagnosis-lower" type="button">小さくなった</button>
+      <p id="diagnosis-volume-answer" role="status">未回答</p>
+    </div>
+  </section>
+
   <section aria-labelledby="run-heading">
     <h2 id="run-heading">自動テスト</h2>
     <p>開始後は声で答えてください。音量の確認と手動チェックは終了後にタップできます。</p>
+    <label for="method">方式</label>
+    <select id="method" data-setting><option value="after">読み上げ後に開始(従来)</option><option value="connected" selected>つなぎっぱなし(D3方式)</option></select>
     <button id="start" class="primary" type="button" data-run>自動テスト開始</button>
     <p id="run-status" class="status" role="status" aria-live="polite">待機中</p>
     <p>画面の消灯防止：<strong id="wake-status">未取得</strong></p>
@@ -80,22 +121,12 @@
     <p class="note">日本語音声は遅れて届くことがあります。読み込み直後から数回再取得し、音声一覧の変更にも追従します。</p>
   </section>
 
-  <section aria-labelledby="settings-heading">
-    <h2 id="settings-heading">声と速さ</h2>
-    <label for="voice">日本語の声</label>
-    <select id="voice" data-setting><option value="">日本語音声を取得中（標準の声を使用）</option></select>
-    <label for="rate">速さ：<output id="rate-value" for="rate">1.00</output> 倍</label>
-    <input id="rate" data-setting type="range" min="0.7" max="1.5" step="0.05" value="1">
-    <label class="check" for="cue"><input id="cue" data-setting type="checkbox" checked>合図音を鳴らす</label>
-    <button id="sample" type="button" data-run>試し読み</button>
-    <p class="note">保存するのは声の選択と速さだけです。合図音、認識結果、ログ、手動チェックは再読み込みで消えます。</p>
-  </section>
 
   <section aria-labelledby="long-heading">
     <h2 id="long-heading">長い発話の状態</h2>
     <p id="long-stats" role="status">経過 0秒 ／ 再開 0回 ／ 0文字</p>
     <div id="long-text" class="live-text" aria-label="長い発話の認識結果">ここに途中結果を表示します。</div>
-    <p class="note">最初の声を8秒待ちます。結果が届いた後は、最後の結果から3秒で終了します。最大90秒です。これは音の大きさではなく、認識結果の到着を使った無音の推定です。</p>
+    <p class="note">最初の声は設定した「答える時間」だけ待ちます。結果が届いた後は、最後の結果から3秒で終了します。最大90秒です。これは音の大きさではなく、認識結果の到着を使った無音の推定です。</p>
   </section>
 
   <section id="volume-panel" aria-labelledby="volume-heading" hidden>
@@ -140,7 +171,7 @@
 <script>
 'use strict';
 (() => {
-  // 結果はメモリー内だけに保持し、声と速さ以外は保存しない。
+  // 結果はメモリー内だけに保持し、声、速さ、答える時間以外は保存しない。
   const $ = id => document.getElementById(id);
   const synth = window.speechSynthesis;
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -151,7 +182,11 @@
   const logs = [];
   const history = [];
   const latest = new Map();
+  const version = 'テスト版 v2(2026-11-06)';
   const tests = [
+    { id:'D1', label:'D1 タップ直後に聞き取り' },
+    { id:'D2', label:'D2 読み上げのあとに聞き取り' },
+    { id:'D3', label:'D3 つなぎっぱなし方式' },
     { id:'T1', label:'T1 読み上げ', retry:true },
     { id:'T2T3', label:'T2/T3 ○×の聞き取り・判定', retry:true },
     { id:'choice', label:'4択の聞き取り・判定', retry:true },
@@ -202,7 +237,7 @@
     return id;
   }
   function clearTimer(id) { if (id != null) { window.clearTimeout(id); timers.delete(id); } }
-  function check(ctx) { if (ctx.stopped || currentRun !== ctx) throw new Stopped(); }
+  function check(ctx) { if (ctx.stopped || currentRun !== ctx) throw new Stopped(); if (ctx.blocked) throw ctx.blocked; }
   function delay(ms, ctx) {
     check(ctx);
     return new Promise((resolve, reject) => {
@@ -224,15 +259,16 @@
   function chosenVoice() { return japaneseVoices.find(voice => voiceKey(voice) === selectedVoiceKey) || null; }
   function settings() {
     const voice = chosenVoice();
-    return { voice, voiceKey:selectedVoiceKey, voiceName:voice ? `${voice.name}（${voice.lang}）` : '標準の日本語音声（声を指定しない）', rate:Number($('rate').value), cue:$('cue').checked };
+    return { voice, voiceKey:selectedVoiceKey, voiceName:voice ? `${voice.name}（${voice.lang}）` : '標準の日本語音声（声を指定しない）', rate:Number($('rate').value), cue:$('cue').checked, answerTime:Number($('answer-time').value), method:$('method').value };
   }
   function saveSettings() {
-    try { localStorage.setItem(storageKey, JSON.stringify({ voice:selectedVoiceKey, rate:Number($('rate').value) })); }
+    try { localStorage.setItem(storageKey, JSON.stringify({ voice:selectedVoiceKey, rate:Number($('rate').value), answerTime:Number($('answer-time').value) })); }
     catch (error) { log(`設定を保存できません：${errorText(error)}`, '注意'); }
   }
   function loadSettings() {
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) || 'null');
+      if (stored && [5,10,15].includes(stored.answerTime)) $('answer-time').value = String(stored.answerTime);
       if (stored && typeof stored.voice === 'string') selectedVoiceKey = stored.voice;
       if (stored && Number.isFinite(stored.rate) && stored.rate >= 0.7 && stored.rate <= 1.5) $('rate').value = String(stored.rate);
     } catch (error) { log(`保存済み設定を読み込めません：${errorText(error)}`, '注意'); }
@@ -363,12 +399,15 @@
       const finish = (error, end) => {
         if (finished) return; finished = true;
         clearTimer(timer); ctx.cancelers.delete(cancel);
+        if (ctx.failSpeech === failSpeech) ctx.failSpeech = null;
         if (utterance) utterance.onend = utterance.onerror = null;
         if (heldUtterance === utterance) heldUtterance = null;
         speech.elapsedMs = Math.round(performance.now() - started); speech.end = end;
         if (error) { speech.error = errorText(error); reject(error); }
         else { ctx.lastSpeechEnd = performance.now(); ctx.lastSpeechEndType = end; log(`読み上げ終了：${end}（${speech.elapsedMs}ms）`); resolve(speech); }
       };
+      const failSpeech = error => { finish(error, '認識の許可エラー'); try { synth.cancel(); } catch (_) {} };
+      ctx.failSpeech = failSpeech;
       const cancel = () => finish(new Stopped(), '中断');
       ctx.cancelers.add(cancel);
       try {
@@ -393,7 +432,7 @@
 
   const recognitionErrors = {
     'not-allowed':'マイクの許可が必要です。Safariのこのサイトのマイク設定を確認してください。',
-    'service-not-allowed':'iPhoneの設定で「Siriと音声入力」をオンにする必要がある可能性があります。',
+    'service-not-allowed':'音声入力、Safariのマイク許可、スクリーンタイムの制限を確認してください。タップの同期処理内以外での開始が拒否された可能性もあります。設定後に再読み込みし、D1から診断してください。',
     'no-speech':'聞き取れませんでした。',
     'audio-capture':'マイクが使えません。接続先や他のアプリの使用状況を確認してください。',
     'network':'通信エラーです。音声認識サービスへの接続を確認してください。',
@@ -408,143 +447,160 @@
   }
   async function beforeListening(ctx) {
     check(ctx);
+    await speak('どうぞ。', ctx, ctx.record);
     const elapsed = performance.now() - (ctx.lastSpeechEnd || performance.now());
     await delay(Math.max(0, 300 - elapsed), ctx);
     await playCue(ctx);
     check(ctx);
   }
-  function recognize(ctx, record, isLong = false) {
+  function denied(error) { return error && ['service-not-allowed','not-allowed'].includes(error.code); }
+  // 認識の寿命と回答受付区間を分離する。start()まで待機を挟まない。
+  function createSession(ctx, events = []) {
+    const engine = { events, error:null, receiver:null, session:0, restarts:0, closed:false, metrics:[] };
+    let rec = null, restartTimer = null, startTimer = null;
+    const stamp = (name, code = '') => {
+      const entry = { at:new Date().toISOString(), name, code, session:engine.session };
+      events.push(entry); log(`認識${entry.session} ${name}${code ? `［${code}］` : ''}：${entry.at}`);
+      renderResults();
+    };
+    const fail = error => {
+      engine.error = error;
+      if (denied(error)) {
+        ctx.blocked = error; ctx.permissionFailed = true;
+        $('recognition-help').hidden = false;
+        if (ctx.failSpeech) ctx.failSpeech(error);
+      }
+      if (engine.receiver) engine.receiver.fail(error);
+    };
+    engine.close = () => {
+      if (engine.closed) return;
+      engine.closed = true; clearTimer(restartTimer); clearTimer(startTimer);
+      ctx.cancelers.delete(cancel);
+      if (rec) {
+        // 終了イベントだけを記録し、再開を止める。
+        try { rec.stop(); } catch (error) { stamp('stop失敗', error.name || 'exception'); }
+        try { rec.abort(); } catch (error) { log(errorText(error), '注意'); }
+        if (activeRecognition === rec) activeRecognition = null;
+      }
+    };
+    const cancel = () => { if (engine.receiver) engine.receiver.fail(new Stopped()); engine.close(); };
+    ctx.cancelers.add(cancel);
+    const start = () => {
+      if (engine.closed || ctx.stopped || currentRun !== ctx || engine.error) return;
+      engine.session++;
+      if (engine.session > 1) engine.restarts++;
+      const session = engine.session;
+      const requested = performance.now();
+      let started = null;
+      const metric = { session, requestedMs:requested, requestToStartMs:null, speechEndToStartMs:null, startToResultMs:null, speechEndType:ctx.lastSpeechEndType || '未取得', resultEvents:[] };
+      engine.metrics.push(metric);
+      const ignored = new Set(), owners = new Map();
+      try {
+        if (!Recognition) throw recognitionError('unsupported');
+        rec = new Recognition(); const own = rec; activeRecognition = own;
+        own.lang = 'ja-JP'; own.continuous = true; own.interimResults = true; own.maxAlternatives = 3;
+        own.onstart = () => {
+          started = performance.now(); metric.requestToStartMs = Math.round(started - requested);
+          metric.speechEndToStartMs = ctx.lastSpeechEnd == null ? null : Math.round(started - ctx.lastSpeechEnd);
+          stamp('onstart'); clearTimer(startTimer);
+        };
+        own.onresult = event => {
+          if (engine.closed || ctx.stopped || currentRun !== ctx) return;
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            // 読み上げ中の結果と前の回答の更新を捨てる。
+            if (!engine.receiver) { ignored.add(i); continue; }
+            if (ignored.has(i)) continue;
+            if (owners.has(i) && owners.get(i) !== engine.receiver) continue;
+            owners.set(i, engine.receiver);
+            const now = performance.now();
+            const resultDelay = started === null ? null : Math.round(now - started);
+            if (metric.startToResultMs === null) metric.startToResultMs = resultDelay;
+            metric.resultEvents.push({ sinceStartMs:resultDelay, sinceRequestMs:Math.round(now - requested), chars:Array.from(event.results[i][0]?.transcript || '').length });
+            engine.receiver.metric(metric);
+            const result = event.results[i];
+            engine.receiver.result({ session, index:i, final:!!result.isFinal,
+              candidates:Array.from(result, item => ({ text:item.transcript || '', confidence:Number.isFinite(item.confidence) ? item.confidence : null })) });
+          }
+        };
+        own.onerror = event => {
+          stamp('onerror', event.error || 'unknown');
+          if (engine.closed || ctx.stopped) return;
+          const error = recognitionError(event.error || 'unknown');
+          if (engine.receiver) engine.receiver.noteError(error);
+          if (error.code !== 'no-speech') { fail(error); engine.close(); }
+        };
+        own.onend = () => {
+          stamp('onend'); clearTimer(startTimer);
+          if (activeRecognition === own) activeRecognition = null;
+          if (!engine.closed && !ctx.stopped && currentRun === ctx && !engine.error) {
+            stamp('再開予定'); restartTimer = later(start, 250);
+          }
+        };
+        stamp(engine.session === 1 ? 'start要求' : '再開start要求');
+        // 開始イベントが来ない場合の保険タイマー。
+        startTimer = later(() => { stamp('開始応答タイムアウト', 'start-failed'); fail(recognitionError('start-failed')); engine.close(); }, 8000);
+        own.start();
+      } catch (error) {
+        if (!error.code) error = recognitionError(error.name === 'NotAllowedError' ? 'not-allowed' : 'start-failed', errorText(error));
+        stamp('start例外', error.code); fail(error); engine.close();
+      }
+    };
+    engine.start = start;
+    return engine;
+  }
+  function recognize(ctx, record, isLong = false, parser = null, seconds = ctx.settings.answerTime) {
     check(ctx);
     const attempt = { at:new Date().toISOString(), long:isLong, text:'', candidates:[], segments:[], metrics:[], errors:[], restarts:0, elapsedMs:0, end:null };
     record.attempts.push(attempt);
+    const engine = ctx.engine || createSession(ctx, record.events);
+    const ownSession = !ctx.engine;
     return new Promise((resolve, reject) => {
-      let done = false, recognition = null, deadlineTimer, tickTimer, restartTimer, silenceTimer, initialTimer;
-      let sessionResults = new Map(), completedText = '', session = 0, lastResultAt = null;
-      const began = performance.now();
-      const countChars = text => Array.from(text).length;
-      const sessionText = () => [...sessionResults.values()].map(segment => segment.candidates[0]?.text || '').join('');
+      const began = performance.now(), restarts = engine.restarts;
+      let done = false, initialTimer, silenceTimer, deadlineTimer, tickTimer;
+      const noteError = error => attempt.errors.push({ code:error.code || 'exception', message:errorText(error), at:new Date().toISOString() });
       const update = () => {
-        attempt.text = completedText + sessionText();
-        attempt.elapsedMs = Math.round(performance.now() - began);
+        attempt.elapsedMs = Math.round(performance.now() - began); attempt.restarts = engine.restarts - restarts;
         if (isLong) {
           $('long-text').textContent = attempt.text || '聞き取り中です。声で話してください。';
-          $('long-stats').textContent = `経過 ${Math.floor(attempt.elapsedMs / 1000)}秒 ／ 再開 ${attempt.restarts}回 ／ ${countChars(attempt.text)}文字`;
+          $('long-stats').textContent = `経過 ${Math.floor(attempt.elapsedMs / 1000)}秒 ／ 再開 ${attempt.restarts}回 ／ ${Array.from(attempt.text).length}文字`;
         }
       };
-      const detach = rec => { rec.onstart = rec.onresult = rec.onerror = rec.onend = rec.onnomatch = null; };
       const finish = (error, end) => {
         if (done) return; done = true;
-        [deadlineTimer,tickTimer,restartTimer,silenceTimer,initialTimer].forEach(clearTimer);
-        ctx.cancelers.delete(cancel);
-        if (recognition) {
-          detach(recognition);
-          try { recognition.abort(); } catch (abortError) { log(`認識の終了処理：${errorText(abortError)}`, '注意'); }
-          if (activeRecognition === recognition) activeRecognition = null;
-        }
+        [initialTimer,silenceTimer,deadlineTimer,tickTimer].forEach(clearTimer);
+        ctx.cancelers.delete(cancel); engine.receiver = null;
+        if (ownSession) engine.close();
         update(); attempt.end = end;
-        if (error && !(error instanceof Stopped)) {
-          if (!attempt.errors.some(entry => entry.code === error.code && entry.message === error.message)) attempt.errors.push({ code:error.code || 'exception', message:errorText(error), at:new Date().toISOString() });
-          log(`聞き取り終了：${errorText(error)}`, 'エラー');
-        } else log(`聞き取り終了：${end} ／ ${countChars(attempt.text)}文字 ／ 再開${attempt.restarts}回`);
+        if (error && !(error instanceof Stopped)) noteError(error);
         renderResults();
         if (error) reject(error); else resolve(attempt);
       };
-      const cancel = () => finish(new Stopped(), '中断');
-      ctx.cancelers.add(cancel);
-      const safe = handler => event => {
-        if (done || ctx.stopped || currentRun !== ctx) return;
-        try { handler(event); } catch (error) { finish(error, '例外'); }
-      };
-      const armSilence = () => {
-        clearTimer(silenceTimer);
-        silenceTimer = later(() => finish(null, '最後の結果から3秒経過'), Math.max(0, 3000 - (performance.now() - lastResultAt)));
-      };
-      const startSession = () => {
-        if (done) return;
-        try {
-          check(ctx);
-          if (!Recognition) { finish(recognitionError('unsupported'), '未対応'); return; }
-          if (isLong && performance.now() - began >= 90000) { finish(null, '最大90秒'); return; }
-          if (isLong && lastResultAt !== null && performance.now() - lastResultAt >= 3000) { finish(null, '最後の結果から3秒経過'); return; }
-          session++;
-          if (session > 1) { attempt.restarts++; log(`長い発話の認識を自動再開：${attempt.restarts}回目`); }
-          sessionResults = new Map();
-          const rec = new Recognition(); recognition = rec; activeRecognition = rec;
-          rec.lang = 'ja-JP'; rec.maxAlternatives = 3; rec.interimResults = isLong; rec.continuous = isLong;
-          const requested = performance.now();
-          const metric = { session, requestedMs:Math.round(requested - began), requestToStartMs:null, speechEndToStartMs:null, startToResultMs:null, speechEndType:ctx.lastSpeechEndType || '未取得', resultEvents:[] };
-          attempt.metrics.push(metric);
-          let started = null;
-          rec.onstart = safe(() => {
-            started = performance.now(); metric.requestToStartMs = Math.round(started - requested);
-            metric.speechEndToStartMs = ctx.lastSpeechEnd == null ? null : Math.round(started - ctx.lastSpeechEnd);
-            log(`認識開始（${session}回目）：読み上げ終了→開始 ${metric.speechEndToStartMs ?? '未取得'}ms ／ 開始要求→開始 ${metric.requestToStartMs}ms`);
-            $('run-status').textContent = isLong ? 'T8 長い発話を聞き取り中（3秒無音・最大90秒）' : `${record.label}：聞き取り中（最大8秒）`;
-          });
-          rec.onresult = safe(event => {
-            for (const index of [...sessionResults.keys()]) {
-              if (index >= event.results.length) sessionResults.delete(index);
-            }
-            let hasText = false;
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              const result = event.results[i];
-              const candidates = Array.from({ length:result.length }, (_, j) => ({ text:result[j].transcript || '', confidence:Number.isFinite(result[j].confidence) ? result[j].confidence : null }));
-              const segment = { session, index:i, final:!!result.isFinal, candidates };
-              sessionResults.set(i, segment);
-              const oldIndex = attempt.segments.findIndex(item => item.session === session && item.index === i);
-              if (oldIndex >= 0) attempt.segments[oldIndex] = segment; else attempt.segments.push(segment);
-              if (candidates.some(candidate => candidate.text.trim())) hasText = true;
-            }
-            attempt.candidates = attempt.segments.flatMap(segment => segment.candidates.map(candidate => ({ ...candidate, session:segment.session, index:segment.index, final:segment.final })));
-            update();
-            const now = performance.now();
-            const resultDelay = started === null ? null : Math.round(now - started);
-            if (metric.startToResultMs === null && resultDelay !== null) metric.startToResultMs = resultDelay;
-            metric.resultEvents.push({ sinceStartMs:resultDelay, sinceRequestMs:Math.round(now - requested), chars:countChars(attempt.text) });
-            log(`認識結果：開始→結果 ${resultDelay ?? '開始イベント未取得'}ms ／ ${attempt.text || '文字なし'}`);
-            if (!isLong) {
-              if (hasText) finish(null, '結果取得');
-              else finish(recognitionError('no-speech'), '文字なし');
-              return;
-            }
-            if (hasText) { lastResultAt = now; clearTimer(initialTimer); armSilence(); }
-          });
-          rec.onnomatch = safe(() => { if (!isLong) finish(recognitionError('no-speech'), '一致する認識なし'); });
-          rec.onerror = safe(event => {
-            const code = event.error || 'unknown';
-            const error = recognitionError(code);
-            attempt.errors.push({ code, message:error.message, at:new Date().toISOString() });
-            log(`認識エラー［${code}］：${error.message}`, 'エラー');
-            // 長い発話の一時的な無音は全体の無音タイマーに任せ、終了イベントで再開する。
-            if (isLong && code === 'no-speech') return;
-            finish(error, '認識エラー');
-          });
-          rec.onend = safe(() => {
-            detach(rec);
-            if (activeRecognition === rec) activeRecognition = null;
-            if (!isLong) { finish(recognitionError('no-speech'), '結果がないまま終了'); return; }
-            completedText += sessionText(); sessionResults = new Map(); recognition = null;
-            update();
-            log('長い発話：認識サービスが終了したため、制限時間内で再開します');
-            restartTimer = later(startSession, 250);
-          });
-          log(`認識開始を要求：${isLong ? '長い発話' : '短い回答'}・候補は最大3件`);
-          rec.start();
-        } catch (error) {
-          if (!(error instanceof Stopped) && !error.code) error = recognitionError('start-failed', errorText(error));
-          finish(error, '開始失敗');
+      const cancel = () => finish(new Stopped(), '中断'); ctx.cancelers.add(cancel);
+      engine.receiver = {
+        fail:error => finish(error, '認識エラー'), noteError,
+        metric:item => { if (!attempt.metrics.includes(item)) attempt.metrics.push(item); },
+        result:segment => {
+          if (done) return;
+          const index = attempt.segments.findIndex(item => item.session === segment.session && item.index === segment.index);
+          if (index < 0) attempt.segments.push(segment); else attempt.segments[index] = segment;
+          attempt.text = attempt.segments.map(item => item.candidates[0]?.text || '').join('');
+          attempt.candidates = attempt.segments.flatMap(item => item.candidates);
+          update(); log(`認識結果：${attempt.text || '文字なし'}`);
+          if (!attempt.candidates.some(item => item.text.trim())) return;
+          clearTimer(initialTimer);
+          clearTimer(silenceTimer);
+          if (isLong || !parser || selectCandidate(attempt, parser)) {
+            silenceTimer = later(() => finish(null, isLong ? '最後の結果から3秒経過' : '最後の結果から1.5秒経過'), isLong ? 3000 : 1500);
+          }
         }
       };
-      if (isLong) {
-        $('long-text').textContent = '聞き取りを開始します。';
-        const tick = () => { if (!done) { update(); tickTimer = later(tick, 250); } };
-        tick();
-        deadlineTimer = later(() => {
-          if (attempt.text.trim()) finish(null, '最大90秒'); else finish(recognitionError('no-speech'), '最大90秒・文字なし');
-        }, 90000);
-        initialTimer = later(() => finish(recognitionError('no-speech'), '最初の声が8秒以内に届きませんでした'), 8000);
-      } else deadlineTimer = later(() => finish(recognitionError('no-speech', '8秒でタイムアウトし、認識を中断しました'), '8秒タイムアウト'), 8000);
-      startSession();
+      $('run-status').textContent = `${record.label}：何か話してください（最初の声を最大${seconds}秒待ちます）`;
+      if (record.id === 'D1' || record.id === 'D2') $('diagnosis-status').textContent = '何か話してください(最大8秒)';
+      initialTimer = later(() => finish(recognitionError('no-speech'), `最初の声が${seconds}秒以内に届きませんでした`), seconds * 1000);
+      deadlineTimer = later(() => finish(attempt.text.trim() ? null : recognitionError('no-speech'), isLong ? '最大90秒' : '回答の制限時間'), isLong ? 90000 : /^D[12]$/.test(record.id) ? 8000 : (seconds + 15) * 1000);
+      const tick = () => { if (!done) { update(); tickTimer = later(tick, 250); } }; if (isLong) tick();
+      if (engine.error) finish(engine.error, '開始失敗');
+      else if (ownSession) engine.start();
     });
   }
 
@@ -610,7 +666,7 @@
       if (turn === 1) await speak('聞き取れませんでした。もう一度どうぞ。', ctx, record);
       await beforeListening(ctx);
       try {
-        const attempt = await recognize(ctx, record, isLong);
+        const attempt = await recognize(ctx, record, isLong, parser);
         const parsed = isLong ? (attempt.text.trim() ? { value:attempt.text, label:`${Array.from(attempt.text).length}文字` } : null) : selectCandidate(attempt, parser);
         attempt.parsed = parsed;
         if (parsed) { record.parsed = parsed; record.text = attempt.text; return { attempt, parsed }; }
@@ -628,7 +684,7 @@
   }
   function makeRecord(id, ctx) {
     const test = tests.find(item => item.id === id);
-    const record = { id, label:test.label, run:ctx.id, at:new Date().toISOString(), endedAt:null, status:'実行中', summary:'実行中', text:'', parsed:null, settings:{ voice:ctx.settings.voiceName, rate:ctx.settings.rate, cue:ctx.settings.cue }, speeches:[], attempts:[], errors:[] };
+    const record = { id, label:test.label, run:ctx.id, at:new Date().toISOString(), endedAt:null, status:'実行中', summary:'実行中', text:'', parsed:null, settings:{ voice:ctx.settings.voiceName, rate:ctx.settings.rate, cue:ctx.settings.cue, answerTime:ctx.settings.answerTime, method:ctx.settings.method }, speeches:[], attempts:[], errors:[], events:ctx.events };
     history.push(record); latest.set(id, record); ctx.record = record; renderResults();
     return record;
   }
@@ -685,7 +741,7 @@
       record.summary = error instanceof Stopped ? '停止ボタンで中断しました。' : errorText(error);
       record.errors.push({ code:error instanceof Stopped ? 'stopped' : error.code || 'exception', message:record.summary, at:new Date().toISOString() });
       log(`${record.label}：${record.summary}`, error instanceof Stopped ? '注意' : 'エラー');
-      if (error instanceof Stopped) throw error;
+      if (error instanceof Stopped || denied(error)) throw error;
     } finally {
       record.endedAt = new Date().toISOString(); ctx.record = null;
       log(`${record.label}：${record.status} ／ ${record.summary}`); renderResults();
@@ -697,21 +753,56 @@
   }
   function launch(kind) {
     if (currentRun) { log('実行中です。停止してからやり直してください。', '注意'); return; }
-    const ctx = { id:++runSequence, stopped:false, cancelers:new Set(), settings:settings(), lastSpeechEnd:null, lastSpeechEndType:null, record:null };
+    const ctx = { id:++runSequence, stopped:false, cancelers:new Set(), settings:settings(), lastSpeechEnd:null, lastSpeechEndType:null, record:null, events:[], engine:null, blocked:null };
     currentRun = ctx; setBusy(true);
     $('run-status').textContent = '準備中：声・合図音・画面の消灯防止';
     log(`実行${ctx.id}：開始 ／ 声：${ctx.settings.voiceName} ／ 速さ：${ctx.settings.rate}倍`);
-    // 三つの操作を開始クリックの同期処理内で行う。ここまで待機処理を入れない。
-    const unlocked = speak('はい。', ctx).then(value => ({ value }), error => ({ error }));
+    let diagnostic = /^D[123]$/.test(kind) ? makeRecord(kind, ctx) : null;
+    if (kind === 'D3') $('diagnosis-volume').hidden = true;
+    if (kind === 'D3' || (!diagnostic && kind !== 'sample' && ctx.settings.method === 'connected')) {
+      ctx.engine = createSession(ctx, ctx.events);
+      ctx.engine.start(); // クリックの同期処理内で直接開始する。
+    }
+    let unlocked;
+    if (kind === 'D1') {
+      // recognizeのPromise executor内で直接startする。await・読み上げを挟まない。
+      unlocked = recognize(ctx, diagnostic, false, null, 8).then(value => ({ value }), error => ({ error }));
+    } else {
+      try { unlocked = speak(kind === 'D2' ? '何か話してください' : 'はい。', ctx, diagnostic).then(value => ({ value }), error => ({ error })); }
+      catch (error) { unlocked = Promise.resolve({ error }); }
+    }
     prepareAudio(ctx);
     requestWake(ctx);
-    void runFlow(ctx, kind, unlocked).catch(error => { log(`実行処理の例外：${errorText(error)}`, 'エラー'); if (currentRun === ctx) stopAll(); });
+    void runFlow(ctx, kind, unlocked, diagnostic).catch(error => { log(`実行処理の例外：${errorText(error)}`, 'エラー'); if (currentRun === ctx) stopAll(); });
   }
-  async function runFlow(ctx, kind, unlocked) {
+  async function runFlow(ctx, kind, unlocked, diagnostic) {
     let completed = false;
     try {
       const result = await unlocked; check(ctx);
-      if (result.error) log(`読み上げの初期化：${errorText(result.error)}`, 'エラー');
+      if (result.error) { if (diagnostic || denied(result.error)) throw result.error; log(errorText(result.error), 'エラー'); }
+      if (diagnostic) {
+        if (kind === 'D1' || kind === 'D2') {
+          if (kind === 'D2' && result.value.end !== '終了イベント') throw recognitionError('start-failed', '読み上げのonendが届かなかったためD2を中止しました');
+          const attempt = kind === 'D1' ? result.value : await recognize(ctx, diagnostic, false, null, 8);
+          diagnostic.status = attempt.text.trim() ? '成功' : '失敗';
+          diagnostic.summary = `聞き取った文字：${attempt.text || '（なし）'}`;
+        } else {
+          const answers = [];
+          for (const [prompt, parser] of [
+            ['まる、か、ばつ、で答えてください。日本の首都は東京である。', parseBoolean],
+            ['1番から4番で答えてください。1番、りんご。2番、みかん。', parseChoice]
+          ]) {
+            await speak(prompt, ctx, diagnostic);
+            const answer = await ask(ctx, diagnostic, parser);
+            answers.push(answer ? answer.parsed.label : '判定できませんでした');
+            await speak(answer ? `判定は、${answer.parsed.label}、です。` : '判定できませんでした。', ctx, diagnostic);
+          }
+          diagnostic.status = answers.every(answer => answer !== '判定できませんでした') ? '成功' : '失敗';
+          diagnostic.summary = `2問の判定：${answers.join(' ／ ')}。聞き取った文字：${diagnostic.attempts.map(item => item.text || '（なし）').join(' ／ ')}。音量：未回答`;
+          $('diagnosis-volume').hidden = false; $('diagnosis-volume-answer').textContent = '未回答';
+        }
+        $('diagnosis-status').textContent = `${diagnostic.status}：${diagnostic.summary}`;
+      } else
       if (kind === 'sample') await speak('音声テスト版です。この声と速さで読み上げます。聞こえ方を確認してください。', ctx);
       else if (kind === 'auto') {
         for (const id of ['T1','T2T3','choice','number','T8','T4']) { await executeStep(id, ctx); check(ctx); }
@@ -719,13 +810,26 @@
       } else await executeStep(kind, ctx);
       check(ctx); completed = true;
     } catch (error) {
+      if (diagnostic) {
+        diagnostic.status = error instanceof Stopped ? '保留' : '失敗';
+        diagnostic.summary = error instanceof Stopped ? '停止ボタンで中断しました。' : errorText(error);
+        diagnostic.errors.push({ code:error.code || (error instanceof Stopped ? 'stopped' : 'exception'), message:diagnostic.summary, at:new Date().toISOString() });
+        $('diagnosis-status').textContent = `${diagnostic.status}：${diagnostic.summary}`;
+      }
+      if (denied(error) || ctx.permissionFailed) {
+        if (ctx.engine) ctx.engine.close();
+        ctx.blocked = null; $('recognition-help').hidden = false;
+        if (!ctx.stopped) { try { await speak('聞き取りが使えませんでした。画面の案内を確認してください。', ctx, diagnostic); } catch (speechError) { log(errorText(speechError), '注意'); } }
+      }
       if (error instanceof Stopped) log('実行を中断しました', '注意');
       else log(`実行中の例外：${errorText(error)}`, 'エラー');
     } finally {
+      if (ctx.engine) ctx.engine.close();
+      if (diagnostic) { diagnostic.endedAt = new Date().toISOString(); ctx.record = null; renderResults(); }
       releaseWake(ctx);
       if (currentRun === ctx) {
         currentRun = null; setBusy(false);
-        $('run-status').textContent = ctx.stopped ? '停止しました。結果は画面に残っています。' : completed ? '完了しました。結果と手動チェックを確認してください。' : '処理を終了しました。エラーと結果を確認してください。';
+        $('run-status').textContent = ctx.permissionFailed && !ctx.stopped ? '聞き取りが使えませんでした。画面の案内を確認してください。' : ctx.stopped ? '停止しました。結果は画面に残っています。' : completed ? '完了しました。結果と手動チェックを確認してください。' : '処理を終了しました。エラーと結果を確認してください。';
         log(completed ? '実行完了。消灯防止を解放しました。' : '実行終了。消灯防止を解放しました。');
       }
     }
@@ -785,6 +889,8 @@
   function ms(value) { return value == null ? '未取得' : `${value}ms`; }
   function recordReport(record) {
     const lines = [`${record.label} ／ 実行${record.run}`, `開始：${record.at}`, `終了：${record.endedAt || '実行中'}`, `結果：${['成功','失敗','保留'].includes(record.status) ? record.status : `保留（${record.status}）`}`, `詳細：${record.summary}`, `使用した声：${record.settings.voice}`, `速さ：${record.settings.rate}倍 ／ 合図音：${record.settings.cue ? 'オン' : 'オフ'}`];
+    lines.push(`答える時間：${record.settings.answerTime}秒 ／ 方式：${record.settings.method}`);
+    record.events.forEach(event => lines.push(`認識${event.session} ${event.name}：${event.at}${event.code ? ` ／ エラーコード：${event.code}` : ''}`));
     if (record.parsed) lines.push(`採用した判定：${record.parsed.label}${record.parsed.matched ? ` ／ 採用候補：${record.parsed.matched}` : ''}`);
     record.speeches.forEach((speech, i) => lines.push(`発話${i + 1}：${speech.text}\n  終了：${speech.end || '実行中'} ／ 所要：${ms(speech.elapsedMs)}${speech.error ? ` ／ エラー：${speech.error}` : ''}`));
     record.attempts.forEach((attempt, i) => {
@@ -810,7 +916,7 @@
       const th = document.createElement('th'); th.scope = 'row'; th.textContent = test.label;
       const td = document.createElement('td'), badge = document.createElement('span'), detail = document.createElement('div');
       badge.className = 'badge'; badge.dataset.status = result.status; badge.textContent = result.status;
-      detail.className = 'detail'; detail.textContent = result.summary;
+      detail.className = 'detail'; detail.textContent = result.summary + (result.id && result.id.startsWith('D') ? '\n' + result.events.map(event => `${event.name}：${event.at}${event.code ? `［${event.code}］` : ''}`).join('\n') : '');
       td.append(badge, detail); row.append(th, td); $('results').append(row);
     }
     $('test-details').replaceChildren();
@@ -819,7 +925,7 @@
   }
   function buildReport() {
     const current = settings();
-    const lines = ['音声テスト版 結果', `コピー日時：${new Date().toISOString()}（${new Date().toLocaleString('ja-JP')}）`, `ページ読込日時：${loadedAt}`, `userAgent：${navigator.userAgent}`, '', '【環境チェック】', ...environmentRows().map(([name,value]) => `${name}：${value}`), `消灯防止の現在状態：${wakeState}`, '', '【現在選択中の設定】', `声：${current.voiceName}`, `速さ：${current.rate}倍`, `合図音：${current.cue ? 'オン' : 'オフ'}`, '', '【各テストの最新結果】'];
+    const lines = [version, '音声テスト版 結果', `コピー日時：${new Date().toISOString()}（${new Date().toLocaleString('ja-JP')}）`, `ページ読込日時：${loadedAt}`, `userAgent：${navigator.userAgent}`, '', '【環境チェック】', ...environmentRows().map(([name,value]) => `${name}：${value}`), `消灯防止の現在状態：${wakeState}`, '', '【現在選択中の設定】', `声：${current.voiceName}`, `速さ：${current.rate}倍`, `答える時間：${current.answerTime}秒`, `方式：${current.method === "connected" ? "つなぎっぱなし(D3方式)" : "読み上げ後に開始(従来)"}`, `合図音：${current.cue ? 'オン' : 'オフ'}`, '', '【各テストの最新結果】'];
     for (const test of tests) {
       const result = statusFor(test.id);
       lines.push(`${test.label}：${['成功','失敗','保留'].includes(result.status) ? result.status : `保留（${result.status}）`} ／ ${result.summary}`);
@@ -849,6 +955,16 @@
 
   // 画面操作の入口をまとめ、イベント起点の例外もログに残す。
   on($('start'), 'click', () => launch('auto'));
+  for (const [index, id] of ['D1','D2','D3'].entries()) on($(`diagnosis-${index + 1}`), 'click', () => launch(id));
+  on($('answer-time'), 'change', saveSettings);
+  function diagnosisVolume(same) {
+    const record = latest.get('D3'); if (!record) return;
+    record.volume = { same, at:new Date().toISOString() };
+    record.summary = record.summary.replace(/。音量：.*$/, '') + `。音量：${same ? '同じ' : '小さくなった'}（${record.volume.at}）`;
+    $('diagnosis-volume-answer').textContent = same ? '同じ' : '小さくなった'; renderResults();
+  }
+  on($('diagnosis-same'), 'click', () => diagnosisVolume(true));
+  on($('diagnosis-lower'), 'click', () => diagnosisVolume(false));
   on($('sample'), 'click', () => launch('sample'));
   on($('stop'), 'click', stopAll);
   on($('copy'), 'click', copyResults);
