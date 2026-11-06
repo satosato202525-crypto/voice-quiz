@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#23594e">
+  <meta name="description" content="声で答えて、少しずつ身につける復習アプリ。">
+  <title>声で復習</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="logic.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="app-header">
+      <span class="app-mark" aria-hidden="true">声</span>
+      <div><p class="app-name">声で復習</p><p class="app-tagline">思い出す。声にする。身につく。</p></div>
+    </header>
+
+    <p id="save-warning" class="warning" role="alert" hidden>保存できません。このページを閉じると学習データが消えます。バックアップを保存してください。</p>
+    <p id="notice" class="notice" role="status" aria-live="polite"></p>
+    <aside id="recognition-help" class="warning" aria-labelledby="help-heading" hidden>
+      <h2 id="help-heading">聞き取りが使えないとき</h2>
+      <p>次の設定を上から確認し、Safariでページを読み込み直してください。</p>
+      <ol>
+        <li>設定 → プライバシーとセキュリティ → 音声認識 → Safari をオン</li>
+        <li>設定 → 一般 → キーボード → 音声入力をオン</li>
+        <li>設定 → アプリ → Safari → マイクを「確認」または「許可」</li>
+      </ol>
+    </aside>
+
+    <section id="page-home" class="page" aria-labelledby="home-heading">
+      <p class="safety">運転中は画面を操作しないでください。開始は出発前に。</p>
+      <div class="page-heading"><p class="eyebrow">今日の学習</p><h1 id="home-heading">声で、思い出そう。</h1></div>
+      <div class="daily-stats" aria-label="今日の学習予定">
+        <div><p>今日の復習</p><p class="stat"><strong id="due-count">0</strong><span>問</span></p></div>
+        <div><p>新しいカード</p><p class="stat"><strong id="new-count">0</strong><span>枚</span></p></div>
+      </div>
+      <button id="start" class="primary start-button" type="button" disabled>読み込み中…</button>
+      <p class="start-note">開始後は、声だけで進められます。</p>
+      <nav class="home-nav" aria-label="学習メニュー">
+        <button type="button" data-page="results">結果<span aria-hidden="true">→</span></button>
+        <button type="button" data-page="weak">苦手リスト<span aria-hidden="true">→</span></button>
+        <button type="button" data-page="import">取り込み<span aria-hidden="true">→</span></button>
+        <button type="button" data-page="settings">設定<span aria-hidden="true">→</span></button>
+        <button type="button" data-page="backup">バックアップ<span aria-hidden="true">→</span></button>
+      </nav>
+      <div class="panel deck-panel">
+        <h2>問題集</h2>
+        <p id="deck-status" class="note" role="status">問題集を読み込んでいます。</p>
+        <ul id="deck-list" class="content-list"></ul>
+        <p class="small note">内蔵の問題集がまだない場合は、「取り込み」からJSONを追加して始められます。</p>
+      </div>
+    </section>
+
+    <section id="page-drive" class="page drive-page" aria-label="運転モード" hidden>
+      <p class="eyebrow">運転モード</p>
+      <p id="run-status" class="run-status" role="status" aria-live="polite">準備中</p>
+      <p class="note">画面の消灯防止：<span id="wake-status">未取得</span></p>
+    </section>
+
+    <section id="page-results" class="page" aria-labelledby="results-heading" hidden>
+      <button class="back-button" type="button" data-page="home">← ホーム</button>
+      <div class="page-heading"><p class="eyebrow">学習の記録</p><h1 id="results-heading">結果</h1></div>
+      <p id="result-summary" class="result-summary" role="status">まだ学習の記録はありません。</p>
+      <div class="panel"><h2>言えなかった要点</h2><ul id="missed-list" class="content-list"></ul></div>
+      <div class="panel"><h2>保留の問題</h2><p class="small note">2回聞き取れなかった問題です。段階は変わりません。</p><ul id="pending-list" class="content-list"></ul></div>
+      <div class="panel"><h2>これまでの学習</h2><p class="small note">最近30回分の記録です。</p><ol id="history-list" class="content-list history-list"></ol></div>
+    </section>
+
+    <section id="page-weak" class="page" aria-labelledby="weak-heading" hidden>
+      <button class="back-button" type="button" data-page="home">← ホーム</button>
+      <div class="page-heading"><p class="eyebrow">もう一度、しっかり</p><h1 id="weak-heading">苦手リスト</h1></div>
+      <p class="note">間違えた回数の多いカードから並びます。</p>
+      <button id="start-weak" class="primary" type="button" disabled>苦手だけで運転モード開始</button>
+      <p class="small note">復習の期限に関係なく、逆引き・4択・○×・数字・説明から出題します。</p>
+      <ul id="weak-list" class="content-list weak-list"></ul>
+    </section>
+
+    <section id="page-import" class="page" aria-labelledby="import-heading" hidden>
+      <button class="back-button" type="button" data-page="home">← ホーム</button>
+      <div class="page-heading"><p class="eyebrow">学ぶことを増やす</p><h1 id="import-heading">問題集を取り込む</h1></div>
+      <p class="note">問題集のJSONを貼り付けて、内容を検査してください。</p>
+      <label for="import-text">問題集のJSON</label>
+      <textarea id="import-text" class="json-text" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="ここにJSONを貼り付けてください"></textarea>
+      <button id="inspect-import" type="button">内容を検査</button>
+      <div class="panel import-preview">
+        <h2>取り込む内容</h2>
+        <p id="import-summary" role="status">検査すると、デッキ名とカード数が表示されます。</p>
+        <ul id="import-errors" class="error-list"></ul>
+        <p class="small note">エラーのあるカードを除き、検査に通ったカードを追加できます。</p>
+        <label for="duplicate-policy">同じIDのカードがある場合</label>
+        <select id="duplicate-policy"><option value="overwrite">上書き（学習履歴は残す）</option><option value="skip">取り込まない</option></select>
+        <button id="add-import" class="primary" type="button" disabled>問題集を追加</button>
+      </div>
+    </section>
+
+    <section id="page-settings" class="page" aria-labelledby="settings-heading" hidden>
+      <button class="back-button" type="button" data-page="home">← ホーム</button>
+      <div class="page-heading"><p class="eyebrow">自分のペースで</p><h1 id="settings-heading">設定</h1></div>
+      <p class="note">変更は自動で保存されます。</p>
+      <div class="panel">
+        <h2>声と聞き取り</h2>
+        <label for="voice">日本語の声</label>
+        <select id="voice"><option value="">日本語音声を取得中（標準の声を使用）</option></select>
+        <label for="rate">読み上げの速さ：<output id="rate-value" for="rate">0.90</output> 倍</label>
+        <input id="rate" type="range" min="0.7" max="1.5" step="0.05" value="0.9">
+        <label for="answer-time">答える時間</label>
+        <select id="answer-time"><option value="5">5秒</option><option value="10" selected>10秒</option><option value="15">15秒</option></select>
+        <p class="small note">最初の声を待つ時間です。説明・ケースは話し始めた後、最大90秒まで聞き取ります。</p>
+        <label class="check" for="cue"><input id="cue" type="checkbox" checked><span>合図音を鳴らす</span></label>
+        <button id="sample" type="button">試し読み</button>
+      </div>
+      <div class="panel">
+        <h2>1回の学習</h2>
+        <label for="question-limit">問題数の上限</label>
+        <select id="question-limit"><option value="10">10問</option><option value="20" selected>20問</option><option value="30">30問</option></select>
+        <label for="session-minutes">時間の上限</label>
+        <select id="session-minutes"><option value="5">5分</option><option value="10" selected>10分</option><option value="20">20分</option></select>
+        <p class="small note">問題数と時間の、先に達したところで終了します。</p>
+        <label for="new-limit">1日の新しいカードの上限</label>
+        <select id="new-limit"><option value="5">5枚</option><option value="10" selected>10枚</option><option value="20">20枚</option></select>
+        <label class="check" for="explain-initially"><input id="explain-initially" type="checkbox"><span>説明を最初から出す</span></label>
+      </div>
+    </section>
+
+    <section id="page-backup" class="page" aria-labelledby="backup-heading" hidden>
+      <button class="back-button" type="button" data-page="home">← ホーム</button>
+      <div class="page-heading"><p class="eyebrow">記録を大切に</p><h1 id="backup-heading">バックアップ</h1></div>
+      <p class="note">問題集・学習の記録・設定をまとめて保存できます。Safariのデータを消す前に、書き出した内容を手元に残してください。</p>
+      <button id="export-backup" type="button">全データを書き出す</button>
+      <label for="backup-text">バックアップのJSON</label>
+      <textarea id="backup-text" class="json-text" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="書き出したデータ、または読み込むデータを表示します"></textarea>
+      <button id="copy-backup" type="button">コピー</button>
+      <button id="load-backup" type="button">貼り付けたデータを読み込む</button>
+      <p id="backup-status" class="note" role="status" aria-live="polite"></p>
+      <p class="small note">読み込むと、この端末の全データが置き換わります。実行前に確認が表示されます。</p>
+    </section>
+    <footer class="app-footer"><p>復習は、声で少しずつ。</p></footer>
+    <noscript><p class="warning">このアプリを使うには、SafariのJavaScriptを有効にしてください。</p></noscript>
+  </main>
+
+  <div id="listening-overlay" class="listening-overlay" hidden>
+    <div class="listening-mic" aria-hidden="true">🎤</div>
+    <p id="listening-title" class="listening-title" role="status" aria-live="polite">聞いています</p>
+    <p id="listening-countdown" class="listening-countdown"></p>
+    <p id="listening-hint" hidden>3秒黙ると終わります</p>
+    <p id="listening-transcript" class="listening-transcript">話してください</p>
+  </div>
+  <button id="stop" type="button" hidden>停止</button>
+
+  <dialog id="confirm-backup" aria-labelledby="confirm-heading" aria-describedby="confirm-description">
+    <h2 id="confirm-heading">全データを置き換えますか？</h2>
+    <p id="confirm-description">現在の問題集・学習の記録・設定を、貼り付けたバックアップの内容に置き換えます。</p>
+    <button id="confirm-replace" class="danger" type="button">置き換えて読み込む</button>
+    <button id="cancel-replace" type="button" autofocus>キャンセル</button>
+  </dialog>
+</body>
+</html>
