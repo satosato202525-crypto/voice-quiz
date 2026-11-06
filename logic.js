@@ -87,11 +87,15 @@
     return null;
   }
   function parseFamiliarity(text) {
-    return matchWords(text, [
-      ['unknown', '知らない', unknownWords],
-      ['vague', 'うろ覚え', ['うろ覚え','うろおぼえ','なんとなく','たぶん','少し']],
-      ['known', '知ってる', knownWords]
-    ]);
+    const number = answerOnly(text);
+    if (['1','いち','1番','一番'].includes(number)) return { value:'known', label:'知ってる' };
+    if (['2','に','2番','二番'].includes(number)) return { value:'vague', label:'うろ覚え' };
+    if (['3','さん','3番','三番'].includes(number)) return { value:'unknown', label:'知らない' };
+    const value = normalize(text);
+    if (['知らな','しらな','知りません','しりません','わからな','わかりません','いいえ'].some(word => value.includes(word))) return { value:'unknown', label:'知らない' };
+    if (['少し','すこし','ちょっと','覚え','おぼえ','なんとなく','たぶん','多分','半分'].some(word => value.includes(word))) return { value:'vague', label:'うろ覚え' };
+    if (['知って','しって','知ってる','はい','わかる','わかります'].some(word => value.includes(word))) return { value:'known', label:'知ってる' };
+    return null;
   }
   function parseFlash(text) { return matchWords(text, [[false, 'わからない', unknownWords], [true, 'わかった', knownWords]]); }
   function parseSelfGrade(text) {

@@ -691,7 +691,7 @@
     const question = item.qIndex === undefined ? null : card.questions[item.qIndex];
     const points = item.mode === 'case' ? question.keypoints : card.keypoints;
     const textParser = text => text.trim() ? {value:text, label:text} : null;
-    if (item.mode === 'screen') return {prompt:`新しい用語です。${card.term}。知ってる、うろ覚え、知らない、のどれですか。`, parser:VQ.parseFamiliarity, answer:`${card.term}。${card.definition}`};
+    if (item.mode === 'screen') return {prompt:`新しい用語です。${card.term}。知ってる、少し、知らない、で答えてください。番号の、1、2、3、でも答えられます。`, parser:VQ.parseFamiliarity, answer:`${card.term}。${card.definition}`};
     if (item.mode === 'flash') return {prompt:`${card.term}。意味を思い浮かべてください。わかった、か、わからない、で答えてください。`, parser:VQ.parseFlash, answer:card.definition};
     if (item.mode === 'reverse') return {prompt:`${card.definition}。この用語は何ですか。`, parser:textParser, answer:card.term, hint:`${Array.from(VQ.applyYomi(card.term, deck.yomi || {}))[0]}で始まる言葉です。`};
     if (item.mode === 'choice') {
