@@ -1,0 +1,12 @@
+# 仕様書は公開しない（個人の利用状況を含むため）
+SPEC.md
+
+# 機密情報
+.env
+.env.local
+.env.*.local
+
+# OS・エディタ
+.DS_Store
+Thumbs.db
+.vscode/
