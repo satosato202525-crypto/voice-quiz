@@ -10,12 +10,12 @@
   let wakeLock = null, wakeOwner = null, wakeRequest = 0, wakePending = null, wakeTimer = null;
   let wakeState = '未取得';
   let japaneseVoices = [], database = null, saveQueue = Promise.resolve(), booting = true;
-  let importCandidate = null, backupCandidate = null;
+  let importCandidate = null, backupCandidate = null, resumeAction = null;
   let state = emptyState();
   class Stopped extends Error { constructor() { super('停止しました'); this.name = 'Stopped'; } }
   class SessionEnd extends Error {}
   function emptyState() {
-    return { format:'voice-quiz-backup/v1', decks:[], progress:{}, pending:[], history:[], explanations:[], settings:{...VQ.DEFAULT_SETTINGS}, builtinHashes:{} };
+    return { format:'voice-quiz-backup/v1', decks:[], progress:{}, pending:[], history:[], explanations:[], settings:{...VQ.DEFAULT_SETTINGS}, builtinHashes:{}, resume:null };
   }
   function errorText(error) { return error && error.message ? error.message : String(error); }
   function log(message, level = '情報') {
@@ -296,7 +296,7 @@
       const update = () => {
         attempt.elapsedMs = Math.round(performance.now() - began); attempt.restarts = engine.restarts - restarts;
         const remaining = Math.max(0, (isLong ? 90 : seconds) - Math.floor(attempt.elapsedMs / 1000));
-        $('listening-countdown').textContent = seconds === Infinity ? '「再開」で続きます' : isLong ? `最大90秒まで あと${remaining}秒` : `残り${remaining}秒`;
+        $('listening-countdown').textContent = isLong ? `最大90秒まで あと${remaining}秒` : `残り${remaining}秒`;
         $('listening-transcript').textContent = attempt.text || '話してください';
 
       };
@@ -329,9 +329,9 @@
           }
         }
       };
-      $('run-status').textContent = ctx.paused ? '一時停止中' : `${ctx.answered + 1}問目／${ctx.settings.questionLimit}問`;
-      if (seconds !== Infinity) initialTimer = later(() => finish(recognitionError('no-speech'), `最初の声が${seconds}秒以内に届きませんでした`), seconds * 1000);
-      if (seconds !== Infinity) deadlineTimer = later(() => finish(attempt.text.trim() ? null : recognitionError('no-speech'), isLong ? '最大90秒' : '回答の制限時間'), isLong ? 90000 : (seconds + 15) * 1000);
+      $('run-status').textContent = `${ctx.answered + 1}問目／${ctx.settings.questionLimit}問`;
+      initialTimer = later(() => finish(recognitionError('no-speech'), `最初の声が${seconds}秒以内に届きませんでした`), seconds * 1000);
+      deadlineTimer = later(() => finish(attempt.text.trim() ? null : recognitionError('no-speech'), isLong ? '最大90秒' : '回答の制限時間'), isLong ? 90000 : (seconds + 15) * 1000);
       $('listening-overlay').hidden = document.visibilityState === 'hidden';
       $('listening-hint').hidden = !isLong;
       $('listening-title').textContent = '聞いています';
@@ -367,7 +367,7 @@
     });
   }
   function reportError(error) {
-    if (currentRun) stopAll();
+    if (currentRun) interruptRun();
     log(errorText(error), 'エラー');
   }
   function saveFailed() {
@@ -478,6 +478,10 @@
     $('due-count').textContent = items.filter(item => !item.new).length;
     $('new-count').textContent = items.filter(item => item.new).length;
     $('start').disabled = booting || !items.length || !!currentRun;
+    $('resume-panel').hidden = !state.resume;
+    $('resume').disabled = booting || !!currentRun;
+    $('finish-resume').disabled = booting || !!currentRun;
+    $('resume-progress').textContent = state.resume ? `${state.resume.answered}問目まで進んでいます` : '';
     $('deck-list').replaceChildren();
     for (const deck of state.decks) $('deck-list').append(element('li', `${deck.deck.title}：${deck.cards.length}枚${deck.builtin ? '（内蔵デッキ）' : ''}`));
     if (!state.decks.some(deck => deck.cards.length)) $('deck-list').append(element('li', '問題集がありません。「取り込み」からJSONを追加できます。'));
@@ -492,7 +496,7 @@
     for (const pending of state.pending) $('pending-list').append(element('li', `${pending.term}（${modeLabel(pending.mode)}、${pending.date}）${pending.prompt ? '：' + pending.prompt : ''}`));
     if (!state.pending.length) $('pending-list').append(element('li', '保留の問題はありません。'));
     $('history-list').replaceChildren();
-    for (const history of state.history.slice(0,30)) $('history-list').append(element('li', `${new Date(history.at).toLocaleString('ja-JP')}：${history.total}問中${history.correct}問正解`));
+    for (const history of state.history.slice(0,30)) $('history-list').append(element('li', `${new Date(history.at).toLocaleString('ja-JP')}：${history.total}問中${history.correct}問正解${history.reason ? '。' + history.reason : ''}`));
   }
   function weakCards() {
     const counts = new Map();
@@ -528,20 +532,32 @@
     $('rate-value').textContent = state.settings.rate.toFixed(2);
     persist(); renderHome();
   }
-  function runSettings() {
-    const voice = japaneseVoices.find(item => voiceKey(item) === state.settings.voice) || japaneseVoices.find(item => /kyoko/i.test(item.name)) || null;
-    return {...state.settings, voice, voiceName:voice ? voice.name : '標準の日本語音声'};
+  function runSettings(settings = state.settings) {
+    const voice = japaneseVoices.find(item => voiceKey(item) === settings.voice) || japaneseVoices.find(item => /kyoko/i.test(item.name)) || null;
+    return {...settings, voice, voiceName:voice ? voice.name : '標準の日本語音声'};
   }
-  function makeContext(sample = false) {
-    return { stopped:false, cancelers:new Set(), settings:runSettings(), lastSpeechEnd:null, record:null, events:[], engine:null, blocked:null, yomi:{}, answered:0, correct:0, missed:[], pending:[], retried:new Set(), retries:[], tail:[], sample, started:performance.now(), pausedMs:0, paused:false, deadline:null, finishRequested:false, recorded:false };
+  function makeContext(sample = false, settings = state.settings) {
+    return { stopped:false, cancelers:new Set(), settings:runSettings(settings), settingsSnapshot:{...settings}, lastSpeechEnd:null, record:null, events:[], engine:null, blocked:null, yomi:{}, answered:0, correct:0, missed:[], pending:[], retried:new Set(), reviews:[], retries:[], fresh:[], tail:[], currentItem:null, sample, started:Date.now(), pausedMs:0, segmentStarted:performance.now(), remainingMs:settings.minutes * 60000, deadline:null, finishRequested:false, recorded:false };
+  }
+  function remainingTime(ctx) {
+    return Math.max(0, ctx.remainingMs - (performance.now() - ctx.segmentStarted));
+  }
+  function saveContinuation(ctx) {
+    state.resume = VQ.buildResume(ctx, {remainingMs:remainingTime(ctx), interruptedAt:Date.now()});
+    return persist();
+  }
+  function saveJudgment(ctx) {
+    // 判定とキュー更新は同期で確定させ、保存待ちの間に中断しても二重に出題しない。
+    ctx.currentItem = null;
+    if (ctx.explanation) { state.explanations.push(ctx.explanation); ctx.explanation = null; }
+    return saveContinuation(ctx);
   }
   function armDeadline(ctx) {
     clearTimer(ctx.deadline);
-    const remaining = ctx.settings.minutes * 60000 - (performance.now() - ctx.started - ctx.pausedMs);
     ctx.deadline = later(() => {
       ctx.finishRequested = true;
       cancelOperations(ctx);
-    }, Math.max(0, remaining));
+    }, remainingTime(ctx));
   }
   function cancelOperations(ctx) {
     hideListening();
@@ -562,11 +578,12 @@
   function recordSession(ctx, reason) {
     if (ctx.recorded || ctx.sample) return;
     ctx.recorded = true;
+    state.resume = null;
     state.history.unshift({at:new Date().toISOString(), total:ctx.answered, correct:ctx.correct, missed:ctx.missed, reason:reason || ''});
     state.history = state.history.slice(0,30);
     persist();
   }
-  function stopAll(reason = '停止しました。') {
+  function stopAll(reason = '途中終了（停止ボタン）') {
     const ctx = currentRun;
     hideListening();
     if (!ctx) return;
@@ -576,14 +593,62 @@
     showPage(ctx.sample ? 'settings' : 'results');
     $('notice').textContent = reason;
   }
-  function launch(weakOnly = false, sample = false) {
+  function interruptRun() {
+    const ctx = currentRun;
+    if (!ctx) return;
+    // 結果を記録した後の読み上げ中は、中断データを再作成しない。
+    ctx.stopped = true;
+    if (!ctx.sample && !ctx.recorded) saveContinuation(ctx);
+    cleanup(ctx);
+    showPage('home');
+    if (!ctx.sample && !ctx.recorded) $('notice').textContent = '学習を中断しました。停車中に「続きから再開」を押してください。';
+  }
+  function confirmResumeEnd(action) {
+    if (!state.resume || booting || currentRun) return;
+    resumeAction = action;
+    $('resume-confirm-heading').textContent = action === 'finish' ? '中断した学習を終えますか' : '中断した学習を終えて新しく始めますか';
+    const dialog = $('confirm-resume');
+    if (dialog.showModal) dialog.showModal(); else dialog.setAttribute('open', '');
+    $('cancel-resume').focus();
+  }
+  function closeResumeDialog() {
+    const dialog = $('confirm-resume');
+    if (dialog.close) dialog.close(); else dialog.removeAttribute('open');
+    resumeAction = null;
+  }
+  function endSavedSession() {
+    if (!state.resume) return;
+    recordSession({...VQ.sessionTotals(state.resume), sample:false, recorded:false}, '途中終了（中断のまま終了）');
+  }
+  function acceptResumeEnd() {
+    const action = resumeAction;
+    if (!action || currentRun || booting) return;
+    closeResumeDialog();
+    endSavedSession();
+    if (action === 'finish') showPage('results');
+    // 確認の「はい」もクリック同期のまま開始処理に渡す。
+    else launch(action === 'weak');
+  }
+  function launch(weakOnly = false, sample = false, resume = false) {
     if (booting || currentRun) return;
-    const items = sample ? [] : planned(weakOnly);
-    if (!sample && !items.length) { log('今出せる問題はありません。', '注意'); return; }
+    if (resume && !state.resume) return;
+    if (!resume && !sample && state.resume) { confirmResumeEnd(weakOnly ? 'weak' : 'start'); return; }
+    const items = sample || resume ? [] : planned(weakOnly);
+    if (!sample && !resume && !items.length) { log('今出せる問題はありません。', '注意'); return; }
     if (!synth || !window.SpeechSynthesisUtterance || (!sample && !Recognition)) {
       log('このブラウザーでは音声機能を使えません。HTTPSのiPhone Safariで開いてください。', '注意'); return;
     }
-    const ctx = makeContext(sample); currentRun = ctx;
+    const saved = resume ? VQ.restoreSession(state.resume, state.decks) : null;
+    const ctx = makeContext(sample, saved ? saved.settings : state.settings);
+    if (saved) {
+      const {settings, interruptedAt, ...restored} = saved;
+      Object.assign(ctx, restored);
+      ctx.pausedMs += Math.max(0, Date.now() - interruptedAt);
+    } else {
+      ctx.reviews = items.filter(item => !item.new); ctx.fresh = items.filter(item => item.new);
+    }
+    ctx.resuming = resume;
+    currentRun = ctx;
     showPage('drive'); $('stop').hidden = false; $('recognition-help').hidden = true;
     $('run-status').textContent = '準備中';
     // ここから4つの開始要求まではawaitを入れず、クリックの権限を使う。
@@ -592,22 +657,8 @@
     try { unlocked = speak('はい。', ctx).then(value => ({value}), error => ({error})); }
     catch (error) { unlocked = Promise.resolve({error}); }
     prepareAudio(ctx); requestWake(ctx);
-    void runFlow(ctx, items, unlocked).catch(reportError);
-  }
-  async function pauseFlow(ctx) {
-    clearTimer(ctx.deadline); ctx.paused = true;
-    const began = performance.now();
-    $('run-status').textContent = '一時停止中';
-    await speak('再開、と言うと続きます。', ctx);
-    for (;;) {
-      const record = {attempts:[], events:[], label:'一時停止'};
-      const attempt = await recognize(ctx, record, false, VQ.parseCommand, Infinity);
-      const command = selectCandidate(attempt, VQ.parseCommand);
-      if (command && command.value === 'finish') throw new SessionEnd();
-      if (command && command.value === 'resume') break;
-      await speak('再開、と言うと続きます。', ctx);
-    }
-    ctx.pausedMs += performance.now() - began; ctx.paused = false; armDeadline(ctx);
+    if (!sample) saveContinuation(ctx);
+    void runFlow(ctx, unlocked).catch(reportError);
   }
   async function answer(ctx, prompt, parser, isLong, hint) {
     let failures = 0;
@@ -623,10 +674,8 @@
       check(ctx);
       const command = attempt && selectCandidate(attempt, VQ.parseCommand);
       if (command) {
-        if (command.value === 'finish') throw new SessionEnd();
         if (command.value === 'skip') return {skip:true, text:attempt.text};
-        if (command.value === 'pause') { await pauseFlow(ctx); await speak(prompt, ctx); }
-        else if (command.value === 'repeat') await speak(prompt, ctx);
+        if (command.value === 'repeat') await speak(prompt, ctx);
         else if (command.value === 'hint') { ctx.hint = true; await speak(hint || 'この問題にヒントはありません。', ctx); }
         else await speak('学習を続けます。', ctx);
         continue;
@@ -665,7 +714,8 @@
       if (!self) return null;
       score = VQ.selfGrade(self.skip ? 'none' : self.value, question.points);
     }
-    state.explanations.push({at:new Date().toISOString(), cardId:card.id, mode:question.question ? 'case' : 'explain', text:response.text, score});
+    check(ctx);
+    ctx.explanation = {at:new Date().toISOString(), cardId:card.id, mode:question.question ? 'case' : 'explain', text:response.text, score};
     return score;
   }
   function scoreMessage(score) {
@@ -691,7 +741,7 @@
     check(ctx);
     if (!response) {
       notePending(ctx, item, card, question); ctx.answered++;
-      await persist(); check(ctx);
+      await saveJudgment(ctx); check(ctx);
       await speak(`答えは、${question.answer}。聞き取りは保留にして、次へ進みます。`, ctx);
       return true;
     }
@@ -702,9 +752,11 @@
       if (familiarity === 'known') {
         const explain = questionFor(card, {mode:'explain'}, deck);
         const explanation = await answer(ctx, explain.prompt, explain.parser, true, explain.hint);
-        if (!explanation) { notePending(ctx, item, card, explain); ctx.answered++; await persist(); check(ctx); await speak(`答えは、${explain.answer}。聞き取りは保留にします。`, ctx); return true; }
+        check(ctx);
+        if (!explanation) { notePending(ctx, item, card, explain); ctx.answered++; await saveJudgment(ctx); check(ctx); await speak(`答えは、${explain.answer}。聞き取りは保留にします。`, ctx); return true; }
         score = explanation.skip ? VQ.selfGrade('none', explain.points) : await explanationScore(ctx, card, explain, explanation);
-        if (!score) { notePending(ctx, item, card, explain); ctx.answered++; await persist(); check(ctx); await speak(`答えは、${explain.answer}。聞き取りは保留にします。`, ctx); return true; }
+        check(ctx);
+        if (!score) { notePending(ctx, item, card, explain); ctx.answered++; await saveJudgment(ctx); check(ctx); await speak(`答えは、${explain.answer}。聞き取りは保留にします。`, ctx); return true; }
         rememberMissed(ctx, card, score);
       }
       const initial = VQ.initialProgress(card, familiarity, score && {...score, hint:ctx.hint}, ctx.settings, today);
@@ -716,7 +768,7 @@
       }
       const correct = !!score && score.correct;
       ctx.answered++; if (correct) ctx.correct++;
-      await persist(); check(ctx);
+      await saveJudgment(ctx); check(ctx);
       if (score) await speak(scoreMessage(score), ctx);
       if (response.skip) await speak(`不正解。正しくは、${question.answer}。`, ctx);
       if (familiarity === 'known') await speak(correct ? '正解。' : `不正解。正しくは、${question.answer}。`, ctx);
@@ -732,8 +784,9 @@
       else if (item.mode === 'number') correct = Math.abs(response.value - question.question.answer) <= (question.question.tolerance || 0) + Number.EPSILON * Math.max(1, Math.abs(question.question.answer)) * 4;
       else { score = await explanationScore(ctx, card, question, response); if (score) correct = score.correct; }
     } else if (question.isLong) score = VQ.selfGrade('none', question.points);
+    check(ctx);
     if (question.isLong && !score) {
-      notePending(ctx, item, card, question); ctx.answered++; await persist(); check(ctx); await speak(`答えは、${question.answer}。聞き取りは保留にします。`, ctx); return true;
+      notePending(ctx, item, card, question); ctx.answered++; await saveJudgment(ctx); check(ctx); await speak(`答えは、${question.answer}。聞き取りは保留にします。`, ctx); return true;
     }
     const updated = VQ.applyReview(card, state.progress, item, {correct, perfect:!!score && score.perfect, hint:ctx.hint}, today, ctx.settings);
     state.progress = updated.progress;
@@ -741,32 +794,33 @@
     for (const key of updated.retryKeys) enqueueRetry(ctx, key, correct && state.progress[key].stage === 0);
     ctx.answered++; if (correct) ctx.correct++;
     if (score) rememberMissed(ctx, card, score);
-    await persist(); check(ctx);
+    await saveJudgment(ctx); check(ctx);
     if (score) await speak(scoreMessage(score), ctx);
     await speak(correct ? '正解。' : `不正解。正しくは、${question.answer}。`, ctx);
     await speak(question.question && question.question.explain ? question.question.explain : card.definition, ctx);
     return true;
   }
-  async function runFlow(ctx, items, unlocked) {
+  async function runFlow(ctx, unlocked) {
     let reason = '';
     try {
       const result = await unlocked; check(ctx); if (result.error) throw result.error;
       if (ctx.sample) { await speak('この声と速さで読み上げます。声で答える復習アプリです。', ctx); return; }
       armDeadline(ctx);
-      const reviews = items.filter(item => !item.new), fresh = items.filter(item => item.new);
-      await speak(`今日は復習${reviews.length}問、新しいカード${fresh.length}枚です。始めます。`, ctx);
+      await speak(ctx.resuming ? '続きから再開します。' : `今日は復習${ctx.reviews.length}問、新しいカード${ctx.fresh.length}枚です。始めます。`, ctx);
       while (ctx.answered < ctx.settings.questionLimit) {
         check(ctx);
         // 段階0の単語帳を末尾で復習できるよう、残りの問題枠を確保する。
         const remaining = ctx.settings.questionLimit - ctx.answered;
-        const item = reviews.shift() || ctx.retries.shift() || (ctx.tail.length >= remaining ? ctx.tail.shift() : fresh.shift() || ctx.tail.shift());
+        const item = ctx.reviews.shift() || ctx.retries.shift() || (ctx.tail.length >= remaining ? ctx.tail.shift() : ctx.fresh.shift() || ctx.tail.shift());
         if (!item) break;
+        ctx.currentItem = item;
         await askItem(ctx, item); check(ctx);
+        ctx.currentItem = null;
         if (ctx.answered < ctx.settings.questionLimit) await delay(1000, ctx);
       }
     } catch (error) {
       if (ctx.stopped) return;
-      if (error instanceof SessionEnd || ctx.finishRequested) reason = ctx.finishRequested ? '設定した時間になりました。' : '声の命令で終了しました。';
+      if (ctx.finishRequested) reason = '設定した時間になりました。';
       else {
         reason = denied(error) || ctx.permissionFailed ? '聞き取りが使えませんでした。画面の案内を確認してください。' : errorText(error);
         if (denied(error) || ctx.permissionFailed) $('recognition-help').hidden = false;
@@ -774,6 +828,7 @@
         if (ctx.engine) ctx.engine.close();
         try { await speak(reason, ctx); } catch (_) {}
         log(reason, 'エラー');
+        if (currentRun === ctx) interruptRun();
       }
     } finally {
       if (!ctx.stopped && currentRun === ctx) {
@@ -857,6 +912,7 @@
       result.explanations.push({...record, score:{...score}});
     }
     result.settings = VQ.sanitizeSettings(input.settings);
+    if (input.resume != null) result.resume = VQ.validateResume(input.resume);
     if (object(input.builtinHashes)) for (const [key,value] of Object.entries(input.builtinHashes)) if (/^[a-z0-9-]+\.json$/.test(key) && text(value)) result.builtinHashes[key] = value;
     return result;
   }
@@ -897,6 +953,11 @@
   for (const button of document.querySelectorAll('[data-page]')) on(button, 'click', () => showPage(button.dataset.page));
   on($('start'), 'click', () => launch());
   on($('start-weak'), 'click', () => launch(true));
+  on($('resume'), 'click', () => launch(false, false, true));
+  on($('finish-resume'), 'click', () => confirmResumeEnd('finish'));
+  on($('confirm-resume-end'), 'click', acceptResumeEnd);
+  on($('cancel-resume'), 'click', closeResumeDialog);
+  on($('confirm-resume'), 'cancel', () => { resumeAction = null; });
   on($('sample'), 'click', () => launch(false, true));
   on($('stop'), 'click', () => stopAll());
   for (const id of ['voice','rate','answer-time','question-limit','session-minutes','new-limit','explain-initially','cue']) on($(id), id === 'rate' ? 'input' : 'change', saveSettings);
@@ -909,8 +970,8 @@
   on($('confirm-replace'), 'click', replaceBackup);
   on($('cancel-replace'), 'click', closeBackupDialog);
   on($('confirm-backup'), 'cancel', () => { backupCandidate = null; });
-  on(window, 'pagehide', () => stopAll('ページを離れたため停止しました。'));
-  on(document, 'visibilitychange', () => { if (document.visibilityState !== 'visible') stopAll('ページが非表示になったため停止しました。'); else refreshVoices(); });
+  on(window, 'pagehide', interruptRun);
+  on(document, 'visibilitychange', () => { if (document.visibilityState === 'hidden') interruptRun(); else refreshVoices(); });
   on(window, 'error', event => reportError(new Error(event.message || '画面の処理でエラーが発生しました。')));
   on(window, 'unhandledrejection', event => { reportError(event.reason); event.preventDefault(); });
   if (synth && synth.addEventListener) on(synth, 'voiceschanged', refreshVoices);

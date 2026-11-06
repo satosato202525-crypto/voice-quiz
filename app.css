@@ -55,6 +55,9 @@ input[type="checkbox"] { width: 28px; height: 28px; flex-shrink: 0; accent-color
 .stat span { font-size: 17px; }
 button.start-button { min-height: 84px; border-radius: 17px; font-size: 24px; letter-spacing: .02em; box-shadow: 0 5px 0 #143b3030; }
 .start-note { margin: 14px 0 28px; color: var(--muted); text-align: center; font-size: 14px; }
+.resume-panel { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line); text-align: center; }
+.resume-panel > p { margin: 12px 0; }
+#finish-resume { width: auto; min-height: 48px; padding: 8px 14px; }
 .home-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .home-nav button { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 0; text-align: left; border-color: var(--line); font-size: 17px; }
 .home-nav button:last-child { grid-column: 1 / -1; }

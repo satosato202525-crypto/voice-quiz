@@ -100,10 +100,7 @@
   function parseCommand(text) {
     return matchWords(text, [
       ['repeat', 'もう一回', ['もう一回','もう一度','もういっかい','もういちど']],
-      ['hint', 'ヒント', ['ヒント']], ['skip', 'スキップ', ['スキップ']],
-      ['pause', '一時停止', ['止めて','とめて','ストップ','一時停止','いちじていし']],
-      ['resume', '再開', ['再開','さいかい','続けて','つづけて']],
-      ['finish', '終了', ['終わり','おわり','終了','しゅうりょう']]
+      ['hint', 'ヒント', ['ヒント']], ['skip', 'スキップ', ['スキップ']]
     ]);
   }
 
@@ -365,5 +362,59 @@
     return result;
   }
 
-  return Object.freeze({ DEFAULT_SETTINGS, INTERVALS, RECALL_MODES, normalize, answerOnly, ...testedParsers, parseFamiliarity, parseFlash, parseSelfGrade, parseCommand, applyYomi, matchesTerm, makeChoices, gradeKeywords, selfGrade, localDate, addDays, sanitizeSettings, validateDeck, allItems, initialProgress, reviewProgress, unlockItems, applyReview, buildSession });
+  function sessionTotals(...parts) {
+    return parts.reduce((total, part) => ({
+      answered:total.answered + part.answered, correct:total.correct + part.correct,
+      missed:total.missed.concat(part.missed.map(value => ({...value}))),
+      pending:total.pending.concat(part.pending.map(value => ({...value})))
+    }), {answered:0, correct:0, missed:[], pending:[]});
+  }
+  function buildResume(session, timing) {
+    const queues = {};
+    for (const name of ['reviews','retries','fresh','tail']) queues[name] = session[name].map(item => ({...item}));
+    // 未確定の問題は最優先のキューへ戻す。保存済みの問題はcurrentItemを空にしておく。
+    if (session.currentItem) queues.reviews.unshift({...session.currentItem});
+    return {...queues, ...sessionTotals(session), retried:[...session.retried],
+      started:session.started, pausedMs:session.pausedMs, ...timing, settings:sanitizeSettings(session.settingsSnapshot)};
+  }
+  function validateResume(value) {
+    const fail = () => { throw new Error('中断データの形式が正しくありません。'); };
+    const count = number => Number.isSafeInteger(number) && number >= 0;
+    const time = number => Number.isFinite(number) && number >= 0;
+    const text = value => typeof value === 'string';
+    if (!isObject(value) || !count(value.answered) || !count(value.correct) || value.correct > value.answered ||
+        !time(value.started) || !time(value.pausedMs) || !time(value.remainingMs) || !time(value.interruptedAt) || !isObject(value.settings)) fail();
+    for (const name of ['reviews','retries','fresh','tail']) {
+      if (!Array.isArray(value[name])) fail();
+      for (const item of value[name]) {
+        if (!isObject(item) || !text(item.cardId) || !idPattern.test(item.cardId) || !text(item.key) ||
+            !['screen','flash','reverse','choice','explain','tf','number','case'].includes(item.mode)) fail();
+        if (['tf','number','case'].includes(item.mode)) {
+          if (!count(item.qIndex) || item.key !== `${item.cardId}:q${item.qIndex}`) fail();
+        } else if (item.key !== `${item.cardId}:${item.mode}` || item.qIndex !== undefined) fail();
+        if ((item.new !== undefined && typeof item.new !== 'boolean') || (item.retry !== undefined && typeof item.retry !== 'boolean')) fail();
+      }
+    }
+    if (!Array.isArray(value.retried) || !value.retried.every(key => text(key) && /^[a-z0-9-]+:(flash|reverse|choice|explain|q\d+)$/.test(key)) ||
+        !Array.isArray(value.missed) || !value.missed.every(item => isObject(item) && text(item.term) && text(item.text)) ||
+        !Array.isArray(value.pending) || !value.pending.every(item => isObject(item) && text(item.key) && text(item.cardId) && text(item.term) && text(item.mode) && text(item.date) && text(item.prompt))) fail();
+    const result = { ...sessionTotals(value), retried:[...new Set(value.retried)], started:value.started, pausedMs:value.pausedMs,
+      remainingMs:value.remainingMs, interruptedAt:value.interruptedAt, settings:sanitizeSettings(value.settings) };
+    for (const name of ['reviews','retries','fresh','tail']) result[name] = value[name].map(item => ({
+      key:item.key, cardId:item.cardId, mode:item.mode,
+      ...(item.qIndex === undefined ? {} : {qIndex:item.qIndex}), ...(item.new ? {new:true} : {}), ...(item.retry ? {retry:true} : {})
+    }));
+    return result;
+  }
+  function restoreSession(saved, decks) {
+    const restored = validateResume(saved), cards = new Map(decks.flatMap(deck => deck.cards.map(card => [card.id, card])));
+    for (const name of ['reviews','retries','fresh','tail']) restored[name] = restored[name].filter(item => {
+      const card = cards.get(item.cardId);
+      return !!card && (item.mode === 'screen' || allItems(card).some(current => current.key === item.key && current.mode === item.mode));
+    });
+    restored.retried = new Set(restored.retried);
+    return restored;
+  }
+
+  return Object.freeze({ DEFAULT_SETTINGS, INTERVALS, RECALL_MODES, normalize, answerOnly, ...testedParsers, parseFamiliarity, parseFlash, parseSelfGrade, parseCommand, applyYomi, matchesTerm, makeChoices, gradeKeywords, selfGrade, localDate, addDays, sanitizeSettings, validateDeck, allItems, initialProgress, reviewProgress, unlockItems, applyReview, buildSession, sessionTotals, buildResume, validateResume, restoreSession });
 }));

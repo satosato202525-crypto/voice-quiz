@@ -31,6 +31,12 @@
     </aside>
 
     <section id="page-home" class="page" aria-labelledby="home-heading">
+      <div id="resume-panel" class="resume-panel" hidden>
+        <button id="resume" class="primary start-button" type="button" disabled>続きから再開</button>
+        <p id="resume-progress" role="status"></p>
+        <button id="finish-resume" class="small" type="button" disabled>中断した学習を終える</button>
+        <p class="small note">再開の操作は停車中に行ってください。</p>
+      </div>
       <p class="safety">運転中は画面を操作しないでください。開始は出発前に。</p>
       <div class="page-heading"><p class="eyebrow">今日の学習</p><h1 id="home-heading">声で、思い出そう。</h1></div>
       <div class="daily-stats" aria-label="今日の学習予定">
@@ -38,7 +44,7 @@
         <div><p>新しいカード</p><p class="stat"><strong id="new-count">0</strong><span>枚</span></p></div>
       </div>
       <button id="start" class="primary start-button" type="button" disabled>読み込み中…</button>
-      <p class="start-note">開始後は、声だけで進められます。</p>
+      <p class="start-note">開始後は声で答えられます。終了は停車中に停止ボタンで行ってください。</p>
       <nav class="home-nav" aria-label="学習メニュー">
         <button type="button" data-page="results">結果<span aria-hidden="true">→</span></button>
         <button type="button" data-page="weak">苦手リスト<span aria-hidden="true">→</span></button>
@@ -149,6 +155,13 @@
     <p id="listening-transcript" class="listening-transcript">話してください</p>
   </div>
   <button id="stop" type="button" hidden>停止</button>
+
+  <dialog id="confirm-resume" aria-labelledby="resume-confirm-heading" aria-describedby="resume-confirm-description">
+    <h2 id="resume-confirm-heading">中断した学習を終えますか</h2>
+    <p id="resume-confirm-description">答えたところまでを途中終了として結果履歴に記録します。</p>
+    <button id="confirm-resume-end" class="primary" type="button">はい</button>
+    <button id="cancel-resume" type="button" autofocus>キャンセル</button>
+  </dialog>
 
   <dialog id="confirm-backup" aria-labelledby="confirm-heading" aria-describedby="confirm-description">
     <h2 id="confirm-heading">全データを置き換えますか？</h2>

@@ -43,7 +43,8 @@ test('ふるい分け知ってる', () => assert.equal(VQ.parseFamiliarity('知�
 test('ふるい分け知らない', () => assert.equal(VQ.parseFamiliarity('知らない').value, 'unknown'));
 test('ふるい分け不明', () => assert.equal(VQ.parseFamiliarity('だいたい全部'), null));
 for (const [word, expected] of [['言えた','all'],['半分','half'],['言えなかった','none']]) test(`自己採点：${word}`, () => assert.equal(VQ.parseSelfGrade(word).value, expected));
-for (const [word, expected] of [['もう一回','repeat'],['もう一度','repeat'],['ヒント','hint'],['スキップ','skip'],['止めて','pause'],['ストップ','pause'],['一時停止','pause'],['再開','resume'],['続けて','resume'],['終わり','finish'],['終了','finish']]) test(`声の命令：${word}`, () => assert.equal(VQ.parseCommand(word).value, expected));
+for (const [word, expected] of [['もう一回','repeat'],['もう一度','repeat'],['ヒント','hint'],['スキップ','skip']]) test(`声の命令：${word}`, () => assert.equal(VQ.parseCommand(word).value, expected));
+for (const word of ['止めて','とめて','終わり','おわり','再開','さいかい','ストップ','一時停止','いちじていし','続けて','つづけて','終了','しゅうりょう']) test(`停止・再開の言葉を命令にしない：${word}`, () => assert.equal(VQ.parseCommand(word), null));
 test('文中の命令語を命令にしない', () => assert.equal(VQ.parseCommand('ヒントを出す機能'), null));
 
 test('yomiは長いキーを先に適用', () => assert.equal(VQ.applyYomi('CVRとCV', { CV:'シーブイ', CVR:'シーブイアール' }), 'シーブイアールとシーブイ'));
@@ -309,4 +310,302 @@ test('セッション構築は入力を変更しない', () => {
 });
 test('空のデッキでも落ちない', () => assert.deepEqual(VQ.buildSession([], {}, { today }), []));
 
-console.log(`${passed}件のテストに成功しました。`);
+const resumeTiming = {remainingMs:123456, interruptedAt:1794000000000};
+function resumeContext() {
+  return {
+    reviews:[itemOf(card, 'reverse')], retries:[{...itemOf(card, 'flash'), retry:true}],
+    fresh:[{key:'new:screen', cardId:'new', mode:'screen', new:true}], tail:[itemOf(card, 'explain')],
+    currentItem:itemOf(card, 'number'), answered:3, correct:2,
+    missed:[{term:'CVR', text:'成果の定義'}],
+    pending:[{key:'cvr:q0', cardId:'cvr', term:'CVR', mode:'tf', date:today, prompt:'割合ですか'}],
+    retried:new Set(['cvr:flash']), started:1793999000000, pausedMs:25000,
+    settingsSnapshot:{...VQ.DEFAULT_SETTINGS, rate:1.1, minutes:5}
+  };
+}
+test('中断では未確定の項目を残りキューの最初に戻す', () => {
+  const ctx = resumeContext(), before = clone({...ctx, retried:[...ctx.retried]});
+  const saved = VQ.buildResume(ctx, resumeTiming);
+  assert.deepEqual(saved.reviews.map(item => item.key), ['cvr:q1','cvr:reverse']);
+  for (const name of ['retries','fresh','tail']) assert.deepEqual(saved[name], ctx[name]);
+  assert.deepEqual(clone({...ctx, retried:[...ctx.retried]}), before);
+});
+test('判定済みの項目はキューに戻さない', () => {
+  const ctx = resumeContext(); ctx.currentItem = null;
+  assert.deepEqual(VQ.buildResume(ctx, resumeTiming).reviews, ctx.reviews);
+});
+for (const name of ['reviews','retries','fresh','tail']) test(`どのキューの途中でも再開の最初に出す：${name}`, () => {
+  const ctx = resumeContext(); ctx.currentItem = ctx[name].shift();
+  const saved = VQ.buildResume(ctx, resumeTiming);
+  assert.equal(saved.reviews[0].key, ctx.currentItem.key); assert.deepEqual(saved[name].slice(name === 'reviews' ? 1 : 0), ctx[name]);
+});
+test('中断情報は集計・時刻・残り時間・設定・再出題済みキーを保存する', () => {
+  const ctx = resumeContext(), saved = VQ.buildResume(ctx, resumeTiming);
+  for (const key of ['answered','correct','missed','pending','started','pausedMs']) assert.deepEqual(saved[key], ctx[key]);
+  assert.deepEqual(saved.settings, ctx.settingsSnapshot); assert.deepEqual(saved.retried, ['cvr:flash']);
+  assert.equal(saved.remainingMs, resumeTiming.remainingMs); assert.equal(saved.interruptedAt, resumeTiming.interruptedAt);
+  saved.missed[0].text = '変更'; saved.reviews[0].key = '変更'; saved.settings.rate = 0.7;
+  assert.equal(ctx.missed[0].text, '成果の定義'); assert.equal(ctx.currentItem.key, 'cvr:q1'); assert.equal(ctx.settingsSnapshot.rate, 1.1);
+});
+test('JSON往復後に全キューと集計を復元する', () => {
+  const saved = clone(VQ.buildResume(resumeContext(), resumeTiming));
+  const restored = VQ.restoreSession(saved, [deckOf([card, makeCard('new')])]);
+  for (const key of ['reviews','retries','fresh','tail','answered','correct','missed','pending','settings','started','pausedMs','remainingMs']) assert.deepEqual(restored[key], saved[key]);
+  assert.deepEqual([...restored.retried], saved.retried);
+});
+test('復元は存在しないカードを全キューから除く', () => {
+  const saved = VQ.buildResume(resumeContext(), resumeTiming), before = clone(saved);
+  const restored = VQ.restoreSession(saved, []);
+  for (const name of ['reviews','retries','fresh','tail']) assert.deepEqual(restored[name], []);
+  assert.equal(restored.answered, 3); assert.equal(restored.correct, 2); assert.deepEqual(saved, before);
+});
+test('復元は削除または種類の変わった質問を除き、残りの順番を守る', () => {
+  const saved = VQ.buildResume(resumeContext(), resumeTiming), changed = clone(card);
+  changed.questions[1] = {type:'tf', statement:'更新', answer:true};
+  saved.reviews.push({key:'cvr:q99', cardId:'cvr', mode:'tf', qIndex:99}, itemOf(card, 'tf'));
+  const restored = VQ.restoreSession(saved, [deckOf([changed])]);
+  assert.deepEqual(restored.reviews.map(item => item.key), ['cvr:reverse','cvr:q0']);
+});
+test('中断前と再開後の集計を合算し、元データは変更しない', () => {
+  const before = VQ.buildResume(resumeContext(), resumeTiming), saved = clone(before);
+  const after = {answered:2, correct:1, missed:[{term:'後半', text:'不足'}], pending:[]};
+  const total = VQ.sessionTotals(before, after);
+  assert.deepEqual(total, {answered:5, correct:3, missed:[...before.missed, ...after.missed], pending:before.pending});
+  total.missed[0].text = '変更'; assert.deepEqual(before, saved);
+});
+test('再開後に再中断しても過去の集計を二重加算しない', () => {
+  const first = VQ.buildResume(resumeContext(), resumeTiming);
+  const ctx = VQ.restoreSession(first, [deckOf([card, makeCard('new')])]);
+  Object.assign(ctx, VQ.sessionTotals(ctx, {answered:1, correct:1, missed:[], pending:[]}));
+  ctx.settingsSnapshot = ctx.settings; ctx.currentItem = null;
+  const second = VQ.buildResume(ctx, {...resumeTiming, remainingMs:100000});
+  assert.equal(second.answered, 4); assert.equal(second.correct, 3); assert.deepEqual(second.pending, first.pending);
+  assert.deepEqual(second.reviews, first.reviews); assert.deepEqual(second.retried, first.retried);
+});
+test('残り時間が0の中断データも復元する', () => {
+  const saved = VQ.buildResume(resumeContext(), {...resumeTiming, remainingMs:0});
+  assert.equal(VQ.restoreSession(saved, [deckOf([card])]).remainingMs, 0);
+});
+for (const [field, value] of [['answered',-1],['correct',4],['remainingMs',Infinity],['pausedMs',-1],['started','昨日'],['settings',null],['retried',['不正']],['reviews',{}],['missed',[{}]],['pending',[{}]]]) test(`不正な中断データを拒否する：${field}`, () => {
+  const saved = VQ.buildResume(resumeContext(), resumeTiming); saved[field] = value;
+  assert.throws(() => VQ.validateResume(saved));
+});
+test('不正なキュー項目の形式を拒否する', () => {
+  const saved = VQ.buildResume(resumeContext(), resumeTiming); saved.reviews[0].qIndex = 99;
+  assert.throws(() => VQ.validateResume(saved));
+});
+
+// ブラウザーの音声・保存・時刻だけを置き換え、実際のクリックとページイベントを通す。
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const appSource = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+const htmlSource = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+async function flush() { for (let i = 0; i < 100; i++) await Promise.resolve(); }
+async function appHarness(initial = null) {
+  let now = 0, nextTimer = 0, gesture = false, utterance = null, recognition = null, holdingWrites = false;
+  const tasks = new Map(), nodes = new Map(), requests = [], speeches = [], writes = [], heldWrites = [];
+  const storage = initial || {format:'voice-quiz-backup/v1', decks:[deckOf([card])],
+    progress:{'cvr:reverse':progressOf(card, 'reverse', 1, '2020-01-01'), 'cvr:flash':progressOf(card, 'flash', 1, '2020-02-01'),
+      '_card:cvr':{cardId:'cvr', recallStreak:0, screenedAt:today}}, pending:[], history:[], explanations:[],
+    settings:{...VQ.DEFAULT_SETTINGS, cue:false}, builtinHashes:{}, resume:null};
+  let stored = clone(storage);
+  class Node {
+    constructor() { this.listeners = {}; this.hidden = false; this.disabled = false; this.value = ''; this.textContent = ''; this.children = []; }
+    addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); }
+    dispatch(name, event = {}) { for (const fn of this.listeners[name] || []) fn(event); }
+    replaceChildren(...children) { this.children = children; }
+    append(child) { this.children.push(child); }
+    focus() {}
+    setAttribute(name) { this[name] = true; }
+    removeAttribute(name) { this[name] = false; }
+    showModal() { this.open = true; }
+    close() { this.open = false; }
+  }
+  for (const match of htmlSource.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) {
+    const node = new Node(); node.hidden = /\bhidden\b/.test(match[0]); nodes.set(match[1], node);
+  }
+  const win = new Node(), doc = new Node();
+  doc.visibilityState = 'visible'; doc.getElementById = id => { assert.ok(nodes.has(id), `未定義の要素：${id}`); return nodes.get(id); };
+  doc.querySelectorAll = () => []; doc.createElement = () => new Node();
+  win.VQ = VQ; win.scrollTo = () => {};
+  win.setTimeout = (fn, ms) => { const id = ++nextTimer; tasks.set(id, {fn, at:now + Math.max(0, ms)}); return id; };
+  win.clearTimeout = id => tasks.delete(id);
+  const request = name => requests.push({name, gesture});
+  win.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+  win.speechSynthesis = {getVoices:() => [], addEventListener:() => {}, cancel:() => { utterance = null; },
+    speak:value => { request('speech'); speeches.push(value.text); utterance = value; }};
+  win.SpeechRecognition = class {
+    constructor() { recognition = this; }
+    start() { request('recognition'); if (this.onstart) this.onstart(); }
+    stop() { if (this.onend) this.onend(); }
+    abort() {}
+  };
+  win.AudioContext = class {
+    constructor() { request('audio-context'); this.state = 'suspended'; }
+    resume() { request('audio-resume'); this.state = 'running'; return Promise.resolve(); }
+    suspend() { this.state = 'suspended'; request('audio-suspend'); return Promise.resolve(); }
+  };
+  win.indexedDB = {open:() => {
+    const result = {};
+    queueMicrotask(() => {
+      result.result = {transaction:() => {
+        const transaction = {objectStore:() => ({
+          get:() => { const read = {}; queueMicrotask(() => { read.result = clone(stored); read.onsuccess(); }); return read; },
+          put:snapshot => {
+            stored = clone(snapshot); writes.push(stored);
+            if (holdingWrites) heldWrites.push(() => transaction.oncomplete());
+            else queueMicrotask(() => transaction.oncomplete());
+          }
+        })};
+        return transaction;
+      }};
+      result.onsuccess();
+    });
+    return result;
+  }};
+  const nav = {wakeLock:{request:() => {
+    request('wake'); return Promise.resolve({released:false, release:() => { request('wake-release'); return Promise.resolve(); }, addEventListener:() => {}});
+  }}};
+  const context = {window:win, document:doc, navigator:nav, indexedDB:win.indexedDB,
+    SpeechSynthesisUtterance:win.SpeechSynthesisUtterance, performance:{now:() => now}, console,
+    fetch:async url => { assert.equal(url, 'decks/index.json'); return {ok:true, json:async () => []}; },
+    Date:class extends Date { constructor(...args) { super(...(args.length ? args : [1794000000000 + now])); } static now() { return 1794000000000 + now; } }};
+  vm.runInNewContext(appSource, context, {filename:'app.js'});
+  await flush();
+  async function advance(ms) {
+    const target = now + ms;
+    for (let i = 0; i < 1000; i++) {
+      const due = [...tasks].filter(([,task]) => task.at <= target).sort((a,b) => a[1].at - b[1].at)[0];
+      if (!due) { now = target; await flush(); return; }
+      tasks.delete(due[0]); now = due[1].at; due[1].fn(); await flush();
+    }
+    throw new Error('タイマーが収束しません');
+  }
+  return {nodes, requests, speeches, writes, advance, snapshot:() => clone(stored),
+    holdWrites:() => { holdingWrites = true; },
+    releaseWrites:async () => { holdingWrites = false; heldWrites.splice(0).forEach(complete => complete()); await flush(); },
+    click:id => { gesture = true; nodes.get(id).dispatch('click'); gesture = false; },
+    hide:() => { doc.visibilityState = 'hidden'; doc.dispatch('visibilitychange'); },
+    show:() => { doc.visibilityState = 'visible'; doc.dispatch('visibilitychange'); },
+    pagehide:() => win.dispatch('pagehide'),
+    finishSpeech:async () => { assert.ok(utterance, '読み上げ待ち'); const value = utterance; utterance = null; value.onend(); await flush(); },
+    respond:text => { const result = [{transcript:text, confidence:1}]; result.isFinal = true; recognition.onresult({resultIndex:0, results:[result]}); }
+  };
+}
+async function testAsync(name, fn) {
+  try { await fn(); passed++; }
+  catch (error) { console.error(`失敗：${name}`); throw error; }
+}
+async function reachListening(app, resuming = false) {
+  app.click(resuming ? 'resume' : 'start');
+  await app.finishSpeech(); // アンロック
+  await app.finishSpeech(); // 開始・再開案内
+  await app.finishSpeech(); // 問題
+  await app.finishSpeech(); // どうぞ
+  await app.advance(300);
+  assert.equal(app.nodes.get('listening-overlay').hidden, false);
+}
+async function integrationTests() {
+  await testAsync('開始と再開はクリック同期内で認識・読み上げ・AudioContext・Wake Lockを要求する', async () => {
+    const app = await appHarness(); app.click('start');
+    for (const name of ['recognition','speech','audio-context','audio-resume','wake']) assert.ok(app.requests.some(item => item.name === name && item.gesture), name);
+    app.hide(); await flush(); app.show(); app.requests.length = 0; app.click('resume');
+    for (const name of ['recognition','speech','audio-resume','wake']) assert.ok(app.requests.some(item => item.name === name && item.gesture), name);
+    await app.finishSpeech(); assert.equal(app.speeches.at(-1), '続きから再開します。');
+  });
+  await testAsync('回答中のhiddenとpagehideは履歴を作らず、未確定問題を先頭に保存する', async () => {
+    const app = await appHarness(); await reachListening(app);
+    app.hide(); app.pagehide(); await flush();
+    const saved = app.snapshot(); assert.equal(saved.history.length, 0); assert.equal(saved.resume.answered, 0);
+    assert.equal(saved.resume.reviews[0].key, 'cvr:reverse'); assert.equal(saved.progress['cvr:reverse'].correct, 0);
+    assert.equal(app.nodes.get('page-home').hidden, false); assert.equal(app.nodes.get('resume-panel').hidden, false);
+    assert.equal(app.nodes.get('resume-progress').textContent, '0問目まで進んでいます');
+    assert.equal(app.nodes.get('listening-overlay').hidden, true); assert.equal(app.nodes.get('stop').hidden, true);
+    assert.ok(app.requests.some(item => item.name === 'wake-release')); assert.ok(app.requests.some(item => item.name === 'audio-suspend'));
+  });
+  await testAsync('判定後に中断し、再読み込み後に再開して完走すると合計1回の履歴になる', async () => {
+    const app = await appHarness(); await reachListening(app); app.respond('CVR'); await app.advance(1500);
+    assert.ok(app.writes.some(saved => saved.progress['cvr:reverse'].correct === 1 && saved.resume.answered === 1));
+    app.hide(); await flush(); const saved = app.snapshot();
+    assert.equal(saved.resume.answered, 1); assert.equal(saved.resume.correct, 1); assert.equal(saved.resume.reviews.length, 0);
+    const reopened = await appHarness(saved); assert.equal(reopened.nodes.get('resume-panel').hidden, false);
+    reopened.click('resume'); await reopened.finishSpeech(); await reopened.finishSpeech();
+    const finished = reopened.snapshot(); assert.equal(finished.history.length, 1); assert.equal(finished.history[0].total, 1); assert.equal(finished.history[0].correct, 1); assert.equal(finished.resume, null);
+    reopened.hide(); await flush(); assert.equal(reopened.snapshot().resume, null); assert.equal(reopened.snapshot().history.length, 1);
+  });
+  await testAsync('停止ボタンは判定前の問題を加算せず結果画面を出し、連打でも一度だけ記録する', async () => {
+    const app = await appHarness(); await reachListening(app); app.click('stop'); app.click('stop'); await flush();
+    const saved = app.snapshot(); assert.equal(saved.resume, null); assert.equal(saved.history.length, 1);
+    assert.equal(saved.history[0].total, 0); assert.equal(saved.history[0].reason, '途中終了（停止ボタン）');
+    assert.equal(app.nodes.get('page-results').hidden, false);
+  });
+  await testAsync('判定の保存待ちに中断・再開しても同じ問題を戻さず、古い処理が集計を変えない', async () => {
+    const app = await appHarness(); await reachListening(app); app.holdWrites(); app.respond('CVR'); await app.advance(1500);
+    app.hide(); await flush(); app.click('export-backup');
+    const saved = JSON.parse(app.nodes.get('backup-text').value);
+    assert.equal(saved.resume.answered, 1); assert.equal(saved.resume.reviews.length, 0);
+    app.show(); app.click('resume'); await app.finishSpeech(); await app.finishSpeech();
+    await app.releaseWrites();
+    assert.equal(app.snapshot().history.length, 1); assert.equal(app.snapshot().history[0].total, 1);
+    assert.equal(app.snapshot().progress['cvr:reverse'].correct, 1); assert.equal(app.snapshot().resume, null);
+  });
+  await testAsync('説明の自己採点が終わる前の中断では、説明記録も段階も集計も保存しない', async () => {
+    const initial = (await appHarness()).snapshot(); initial.decks[0].cards[0].keypoints = ['要点'];
+    initial.progress['cvr:explain'] = progressOf(card, 'explain', 1, '2019-01-01');
+    const app = await appHarness(initial); await reachListening(app); app.respond('説明しています'); await app.advance(3000);
+    assert.ok(app.speeches.at(-1).includes('言えた、半分、言えなかった'));
+    app.hide(); await flush(); const saved = app.snapshot();
+    assert.equal(saved.explanations.length, 0); assert.equal(saved.resume.answered, 0); assert.equal(saved.resume.reviews[0].key, 'cvr:explain');
+    assert.deepEqual(saved.progress['cvr:explain'], initial.progress['cvr:explain']);
+  });
+  await testAsync('再開後に回答・再中断・再開・停止しても全区間を合算した1回分を記録する', async () => {
+    const initial = (await appHarness()).snapshot(); initial.resume = VQ.buildResume(resumeContext(), resumeTiming);
+    initial.pending = clone(initial.resume.pending);
+    const app = await appHarness(initial); await reachListening(app, true); app.respond('2'); await app.advance(1500);
+    app.hide(); await flush();
+    assert.equal(app.snapshot().history.length, 0); assert.equal(app.snapshot().resume.answered, 4); assert.equal(app.snapshot().resume.correct, 3);
+    app.show(); app.click('resume'); app.click('stop'); await flush();
+    const saved = app.snapshot(); assert.equal(saved.history.length, 1); assert.equal(saved.history[0].total, 4); assert.equal(saved.history[0].correct, 3);
+    assert.deepEqual(saved.history[0].missed, initial.resume.missed); assert.deepEqual(saved.pending, initial.pending);
+    assert.equal(saved.history[0].reason, '途中終了（停止ボタン）'); assert.equal(saved.resume, null);
+  });
+  await testAsync('中断分の終了はページ内確認のキャンセルで保持し、はいで1回だけ記録する', async () => {
+    const app = await appHarness(); app.click('start'); app.hide(); await flush(); app.show();
+    app.click('finish-resume'); assert.equal(app.nodes.get('confirm-resume').open, true);
+    assert.equal(app.snapshot().history.length, 0); app.click('cancel-resume'); assert.ok(app.snapshot().resume);
+    app.click('finish-resume'); app.click('confirm-resume-end'); app.click('confirm-resume-end'); await flush();
+    assert.equal(app.snapshot().resume, null); assert.equal(app.snapshot().history.length, 1);
+    assert.equal(app.snapshot().history[0].reason, '途中終了（中断のまま終了）'); assert.equal(app.nodes.get('page-results').hidden, false);
+  });
+  for (const button of ['start','start-weak']) await testAsync(`中断があれば新規開始は確認し、はいのクリック同期で開始する：${button}`, async () => {
+    const app = await appHarness(); await reachListening(app); app.respond('別の答え'); await app.advance(1500);
+    app.hide(); await flush(); app.show(); app.requests.length = 0;
+    app.click(button); assert.equal(app.nodes.get('resume-confirm-heading').textContent, '中断した学習を終えて新しく始めますか');
+    assert.equal(app.requests.length, 0); app.click('cancel-resume'); assert.ok(app.snapshot().resume);
+    app.click(button); app.click('confirm-resume-end'); await flush();
+    assert.equal(app.snapshot().history.length, 1); assert.equal(app.snapshot().history[0].total, 1);
+    assert.ok(app.requests.some(item => item.name === 'recognition' && item.gesture));
+  });
+  await testAsync('再開後の時間制限は設定全体ではなく残り時間から進み、中断中は減らない', async () => {
+    const app = await appHarness(); app.click('start'); await app.advance(1000); app.hide(); await flush();
+    const saved = app.snapshot(); assert.equal(saved.resume.remainingMs, 599000);
+    saved.resume.remainingMs = 2000;
+    const reopened = await appHarness(saved); await reopened.advance(10000); reopened.click('resume'); await reopened.finishSpeech();
+    await reopened.advance(1999); assert.equal(reopened.snapshot().history.length, 0);
+    await reopened.advance(1); assert.equal(reopened.snapshot().history.length, 1); assert.equal(reopened.snapshot().history[0].reason, '設定した時間になりました。');
+    assert.equal(reopened.snapshot().resume, null);
+  });
+  await testAsync('バックアップは中断を含めて検査し、不正な中断では置き換えない', async () => {
+    const app = await appHarness(); app.click('start'); app.hide(); await flush();
+    app.click('export-backup'); const exported = JSON.parse(app.nodes.get('backup-text').value); assert.ok(exported.resume);
+    exported.resume.remainingMs = -1; app.nodes.get('backup-text').value = JSON.stringify(exported); app.click('load-backup');
+    assert.ok(!app.nodes.get('confirm-backup').open); assert.ok(app.snapshot().resume);
+    exported.resume.remainingMs = 1000; app.nodes.get('backup-text').value = JSON.stringify(exported); app.click('load-backup');
+    assert.equal(app.nodes.get('confirm-backup').open, true); app.click('confirm-replace'); await flush();
+    assert.equal(app.snapshot().resume.remainingMs, 1000);
+    delete exported.resume; app.nodes.get('backup-text').value = JSON.stringify(exported); app.click('load-backup'); app.click('confirm-replace'); await flush();
+    assert.equal(app.snapshot().resume, null); assert.equal(app.nodes.get('resume-panel').hidden, true);
+  });
+  console.log(`${passed}件のテストに成功しました。`);
+}
+void integrationTests().catch(error => { console.error(error); process.exitCode = 1; });
