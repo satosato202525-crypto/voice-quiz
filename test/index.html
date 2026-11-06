@@ -49,6 +49,11 @@
     #log { padding-left:25px; max-height:440px; overflow:auto; overflow-wrap:anywhere; }
     #log li { padding:8px 0; border-bottom:1px solid var(--line); }
     .stop-dock { position:fixed; bottom:0; left:0; right:0; z-index:10; padding:10px 16px calc(10px + env(safe-area-inset-bottom)); background:rgba(239,245,246,.97); border-top:1px solid var(--line); }
+    .listening-overlay { position:fixed; inset:0; z-index:9; background:#102735; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:24px 16px calc(125px + env(safe-area-inset-bottom)); overflow:auto; }
+    .listening-mic { font-size:96px; line-height:1.2; }
+    .listening-title { font-size:48px; font-weight:800; line-height:1.3; }
+    .listening-countdown { font-size:40px; line-height:1.4; }
+    .listening-transcript { font-size:22px; white-space:pre-wrap; overflow-wrap:anywhere; width:100%; max-height:25vh; overflow:auto; }
     #stop { display:block; max-width:748px; margin:0 auto; background:#a42e24; color:white; border-color:#a42e24; font-size:22px; min-height:62px; }
     textarea { width:100%; min-height:300px; padding:12px; border:2px solid var(--blue); border-radius:10px; }
     [hidden] { display:none !important; }
@@ -61,7 +66,7 @@
   <header>
     <p class="eyebrow">iPhone Safari 動作検証</p>
     <h1>音声テスト版</h1>
-    <p>テスト版 v2(2026-11-06)</p>
+    <p>テスト版 v3（2026-11-07）</p>
     <p>読み上げて、聞き取って、結果を残す。約2〜3分のテストです。</p>
     <p class="note">HTTPSで開き、マイクの許可を求められたら許可してください。初回の許可操作は必要です。音声・認識結果はこのページから送信・保存しません。ただし、Safariの音声認識サービス自体が通信する場合があります。</p>
   </header>
@@ -166,6 +171,13 @@
   </section>
   <noscript><p class="safety">このテストにはJavaScriptを有効にする必要があります。</p></noscript>
 </main>
+<div id="listening-overlay" class="listening-overlay" hidden>
+  <div class="listening-mic" aria-hidden="true">🎤</div>
+  <p id="listening-title" class="listening-title" role="status" aria-live="polite"></p>
+  <p id="listening-countdown" class="listening-countdown"></p>
+  <p id="listening-hint" hidden>3秒黙ると終わります</p>
+  <p id="listening-transcript" class="listening-transcript">話してください</p>
+</div>
 <div class="stop-dock"><button id="stop" type="button">停止</button></div>
 
 <script>
@@ -182,7 +194,7 @@
   const logs = [];
   const history = [];
   const latest = new Map();
-  const version = 'テスト版 v2(2026-11-06)';
+  const version = 'テスト版 v3（2026-11-07）';
   const tests = [
     { id:'D1', label:'D1 タップ直後に聞き取り' },
     { id:'D2', label:'D2 読み上げのあとに聞き取り' },
@@ -390,6 +402,7 @@
 
   function speak(text, ctx, record = null) {
     check(ctx);
+    hideListening();
     return new Promise((resolve, reject) => {
       if (!synth || !window.SpeechSynthesisUtterance) { reject(new Error('読み上げは未対応です')); return; }
       let utterance, timer, finished = false;
@@ -523,6 +536,7 @@
           }
         };
         own.onerror = event => {
+          hideListening();
           stamp('onerror', event.error || 'unknown');
           if (engine.closed || ctx.stopped) return;
           const error = recognitionError(event.error || 'unknown');
@@ -560,6 +574,9 @@
       const noteError = error => attempt.errors.push({ code:error.code || 'exception', message:errorText(error), at:new Date().toISOString() });
       const update = () => {
         attempt.elapsedMs = Math.round(performance.now() - began); attempt.restarts = engine.restarts - restarts;
+        const remaining = Math.max(0, (isLong ? 90 : seconds) - Math.floor(attempt.elapsedMs / 1000));
+        $('listening-countdown').textContent = isLong ? `最大90秒まで あと${remaining}秒` : `残り${remaining}秒`;
+        $('listening-transcript').textContent = attempt.text || '話してください';
         if (isLong) {
           $('long-text').textContent = attempt.text || '聞き取り中です。声で話してください。';
           $('long-stats').textContent = `経過 ${Math.floor(attempt.elapsedMs / 1000)}秒 ／ 再開 ${attempt.restarts}回 ／ ${Array.from(attempt.text).length}文字`;
@@ -567,6 +584,7 @@
       };
       const finish = (error, end) => {
         if (done) return; done = true;
+        hideListening();
         [initialTimer,silenceTimer,deadlineTimer,tickTimer].forEach(clearTimer);
         ctx.cancelers.delete(cancel); engine.receiver = null;
         if (ownSession) engine.close();
@@ -595,13 +613,21 @@
         }
       };
       $('run-status').textContent = `${record.label}：何か話してください（最初の声を最大${seconds}秒待ちます）`;
-      if (record.id === 'D1' || record.id === 'D2') $('diagnosis-status').textContent = '何か話してください(最大8秒)';
+      if (record.id === 'D1' || record.id === 'D2') $('diagnosis-status').textContent = `何か話してください(最大${seconds}秒)`;
       initialTimer = later(() => finish(recognitionError('no-speech'), `最初の声が${seconds}秒以内に届きませんでした`), seconds * 1000);
-      deadlineTimer = later(() => finish(attempt.text.trim() ? null : recognitionError('no-speech'), isLong ? '最大90秒' : '回答の制限時間'), isLong ? 90000 : /^D[12]$/.test(record.id) ? 8000 : (seconds + 15) * 1000);
-      const tick = () => { if (!done) { update(); tickTimer = later(tick, 250); } }; if (isLong) tick();
+      deadlineTimer = later(() => finish(attempt.text.trim() ? null : recognitionError('no-speech'), isLong ? '最大90秒' : '回答の制限時間'), isLong ? 90000 : /^D[12]$/.test(record.id) ? seconds * 1000 : (seconds + 15) * 1000);
+      $('listening-overlay').hidden = document.visibilityState === 'hidden';
+      $('listening-hint').hidden = !isLong;
+      $('listening-title').textContent = '聞いています';
+      const tick = () => { if (!done) { update(); tickTimer = later(tick, isLong ? 250 : 1000); } }; tick();
       if (engine.error) finish(engine.error, '開始失敗');
       else if (ownSession) engine.start();
     });
+  }
+
+  function hideListening() {
+    $('listening-overlay').hidden = true;
+    $('listening-title').textContent = '';
   }
 
   function normalize(text) { return String(text).normalize('NFKC').toLowerCase().replace(/[\s、。！？!?「」『』"'・]/g, ''); }
@@ -610,8 +636,8 @@
   }
   function parseBoolean(text) {
     const value = answerOnly(text);
-    if (['まる','マル','丸','○','◯','〇','正しい','はい','正解','そう'].includes(value)) return { value:true, label:'まる' };
-    if (['ばつ','バツ','×','違う','ちがう','いいえ','間違い'].includes(value)) return { value:false, label:'ばつ' };
+    if (['まる','マル','丸','○','◯','〇','正しい','ただしい','はい','正解','せいかい','そう'].includes(value)) return { value:true, label:'まる' };
+    if (['ばつ','バツ','×','違う','ちがう','いいえ','間違い','ちがいます','違います','まちがい','間違ってる','まちがってる'].includes(value)) return { value:false, label:'ばつ' };
     return null;
   }
   function parseChoice(text) {
@@ -699,7 +725,7 @@
         record.status = speech.end === '終了イベント' ? '成功' : '保留';
         record.summary = speech.end === '終了イベント' ? '読み上げの終了イベントを受信しました。実際の音は耳で確認してください。' : '保険タイマーで続行しました。実際に聞こえたか確認が必要です。';
       } else if (id === 'T2T3') {
-        await speak('まる、か、ばつ、で答えてください。日本の首都は東京である。', ctx, record);
+        await speak('はい、か、いいえ、で答えてください。まる、ばつ、でも答えられます。日本の首都は東京である。', ctx, record);
         const result = await ask(ctx, record, parseBoolean);
         if (result) {
           record.status = '成功'; record.summary = `判定：${result.parsed.label}。設問の正解：まる。${result.parsed.value ? '正解と一致。' : '正解とは不一致（聞き取り・判定は成功）。'}`;
@@ -766,7 +792,7 @@
     let unlocked;
     if (kind === 'D1') {
       // recognizeのPromise executor内で直接startする。await・読み上げを挟まない。
-      unlocked = recognize(ctx, diagnostic, false, null, 8).then(value => ({ value }), error => ({ error }));
+      unlocked = recognize(ctx, diagnostic).then(value => ({ value }), error => ({ error }));
     } else {
       try { unlocked = speak(kind === 'D2' ? '何か話してください' : 'はい。', ctx, diagnostic).then(value => ({ value }), error => ({ error })); }
       catch (error) { unlocked = Promise.resolve({ error }); }
@@ -783,13 +809,13 @@
       if (diagnostic) {
         if (kind === 'D1' || kind === 'D2') {
           if (kind === 'D2' && result.value.end !== '終了イベント') throw recognitionError('start-failed', '読み上げのonendが届かなかったためD2を中止しました');
-          const attempt = kind === 'D1' ? result.value : await recognize(ctx, diagnostic, false, null, 8);
+          const attempt = kind === 'D1' ? result.value : await recognize(ctx, diagnostic);
           diagnostic.status = attempt.text.trim() ? '成功' : '失敗';
           diagnostic.summary = `聞き取った文字：${attempt.text || '（なし）'}`;
         } else {
           const answers = [];
           for (const [prompt, parser] of [
-            ['まる、か、ばつ、で答えてください。日本の首都は東京である。', parseBoolean],
+            ['はい、か、いいえ、で答えてください。まる、ばつ、でも答えられます。日本の首都は東京である。', parseBoolean],
             ['1番から4番で答えてください。1番、りんご。2番、みかん。', parseChoice]
           ]) {
             await speak(prompt, ctx, diagnostic);
@@ -824,6 +850,7 @@
       if (error instanceof Stopped) log('実行を中断しました', '注意');
       else log(`実行中の例外：${errorText(error)}`, 'エラー');
     } finally {
+      hideListening();
       if (ctx.engine) ctx.engine.close();
       if (diagnostic) { diagnostic.endedAt = new Date().toISOString(); ctx.record = null; renderResults(); }
       releaseWake(ctx);
@@ -835,6 +862,7 @@
     }
   }
   function stopAll() {
+    hideListening();
     const ctx = currentRun;
     if (ctx) {
       ctx.stopped = true;
@@ -973,12 +1001,13 @@
   on($('volume-same'), 'click', () => setManual('T4', true));
   on($('volume-lower'), 'click', () => setManual('T4', false));
   on(document, 'visibilitychange', () => {
+    if (document.visibilityState !== 'visible') hideListening();
     log(document.visibilityState === 'visible' ? 'ページが表示に戻りました' : 'ページが非表示になりました（OSによって処理が止まる可能性があります）', '注意');
     if (document.visibilityState === 'visible') { refreshVoices(); if (currentRun && !currentRun.stopped) requestWake(currentRun); }
   });
   on(window, 'pagehide', stopAll);
-  on(window, 'error', event => log(`ページの例外：${event.message || '原因不明'}`, 'エラー'));
-  on(window, 'unhandledrejection', event => { log(`非同期処理の例外：${errorText(event.reason)}`, 'エラー'); event.preventDefault(); });
+  on(window, 'error', event => { hideListening(); log(`ページの例外：${event.message || '原因不明'}`, 'エラー'); });
+  on(window, 'unhandledrejection', event => { hideListening(); log(`非同期処理の例外：${errorText(event.reason)}`, 'エラー'); event.preventDefault(); });
   try {
     for (const test of tests.filter(test => test.retry)) {
       const heading = document.createElement('h3'); heading.textContent = test.label;
